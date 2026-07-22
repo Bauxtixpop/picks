@@ -100,14 +100,38 @@ if deporte == "⚽ Fútbol (Liga MX)":
         ]
 
     def ejecutar_laboratorio_modelos(local, visita, df):
-        try:
-            s_loc = df[df['Equipo'] == local].iloc[0]
-            s_vis = df[df['Equipo'] == visita].iloc[0]
-        except IndexError: return None
+        # 🛡️ 1. Búsqueda Inteligente (Flexible) para evitar errores de nombres (ej. "Atlante" en "Atlante FC")
+        def buscar_equipo(nombre, df_tabla):
+            if df_tabla.empty or 'Equipo' not in df_tabla.columns: return None
+            # Búsqueda por texto contenido (sin importar mayúsculas/minúsculas)
+            m = df_tabla[df_tabla['Equipo'].astype(str).str.contains(nombre, case=False, na=False)]
+            if not m.empty: return m.iloc[0].to_dict()
+            # Búsqueda por la última palabra (ej. "Azul" de Cruz Azul)
+            m = df_tabla[df_tabla['Equipo'].astype(str).str.contains(nombre.split()[-1], case=False, na=False)]
+            if not m.empty: return m.iloc[0].to_dict()
+            # Búsqueda por la primera palabra (ej. "Santos" o "Pumas")
+            m = df_tabla[df_tabla['Equipo'].astype(str).str.contains(nombre.split()[0], case=False, na=False)]
+            if not m.empty: return m.iloc[0].to_dict()
+            return None
 
-        xg_prom = df['xG'].mean() / 10.0 if df['xG'].mean() > 0 else 1.3
-        pj_l = max(s_loc['PJ'], 1)
-        pj_v = max(s_vis['PJ'], 1)
+        s_loc = buscar_equipo(local, df)
+        if s_loc:
+            s_loc['Equipo'] = local
+        else:
+            # Respaldo estadístico automático si el equipo es nuevo en la liga o falla la conexión
+            s_loc = {"Equipo": local, "PJ": 1, "Pts": 1.5, "GF": 1.5, "GC": 1.5, "xG": 1.4, "xGA": 1.4, "IDR": 50.0, "AttPen_Promedio": 15.0, "Tiros_Promedio": 11.0, "Calidad_Tiro": 0.10}
+
+        s_vis = buscar_equipo(visita, df)
+        if s_vis:
+            s_vis['Equipo'] = visita
+        else:
+            s_vis = {"Equipo": visita, "PJ": 1, "Pts": 1.5, "GF": 1.5, "GC": 1.5, "xG": 1.4, "xGA": 1.4, "IDR": 50.0, "AttPen_Promedio": 15.0, "Tiros_Promedio": 11.0, "Calidad_Tiro": 0.10}
+
+        xg_prom = df['xG'].mean() / 10.0 if not df.empty and df['xG'].mean() > 0 else 1.3
+        pj_l = max(s_loc.get('PJ', 1), 1)
+        pj_v = max(s_vis.get('PJ', 1), 1)
+        
+        # ... (De aquí hacia abajo, deja intacto el resto de tu función empezando por "# MÉTODO 1: Distribución de Poisson")
 
         # MÉTODO 1: Distribución de Poisson Ajustada
         atq_l = (s_loc['xG'] / pj_l) / xg_prom
