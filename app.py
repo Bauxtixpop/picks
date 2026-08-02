@@ -69,18 +69,17 @@ if deporte == "⚽ Fútbol (Liga MX)":
   # --- CONTROL DE JORNADA MANUAL (Evita bloqueos de pago de APIs) ---
     @st.cache_data(ttl=3600*6)
     def obtener_jornada_automatica():
-        # Aquí solo pegas los 9 enfrentamientos de la jornada actual cada semana.
-        # Es 100% gratis, no depende de servidores externos y nunca falla.
+        # Lista actualizada con la Jornada 3 del Apertura
         return [
+            "Puebla vs Guadalajara",
             "San Luis vs Tijuana",
-            "Puebla vs Atlas",
-            "Guadalajara vs Mazatlán",
-            "Toluca vs Cruz Azul",
-            "Tigres vs América",
-            "Pachuca vs Querétaro",
-            "León vs Santos",
-            "Pumas vs Juárez",
-            "Necaxa vs Monterrey"
+            "Juárez vs Pumas",
+            "Querétaro vs Tigres",
+            "Atlas vs Monterrey",
+            "León vs Pachuca",
+            "Cruz Azul vs Atlante",
+            "América vs Santos",
+            "Toluca vs Necaxa"
         ]
 
     partidos_jornada_default = obtener_jornada_automatica()
