@@ -66,54 +66,22 @@ if deporte == "⚽ Fútbol (Liga MX)":
 
     lista_equipos = sorted(df_ligamx['Equipo'].tolist())
 
-   # --- NUEVA FUNCIÓN AUTOMÁTICA (VERSIÓN PLAN GRATUITO) ---
+  # --- CONTROL DE JORNADA MANUAL (Evita bloqueos de pago de APIs) ---
     @st.cache_data(ttl=3600*6)
     def obtener_jornada_automatica():
-        url = "https://v3.football.api-sports.io/fixtures"
-        
-        # 1. Calculamos la fecha de hoy y 8 días hacia el futuro para abarcar la jornada completa
-        hoy = datetime.now()
-        futuro = hoy + timedelta(days=8)
-        
-        # 2. Usamos el rango de fechas permitido en el plan gratis en lugar del bloqueado "next"
-        querystring = {
-            "league": "262",
-            "season": "2026",
-            "from": hoy.strftime("%Y-%m-%d"),
-            "to": futuro.strftime("%Y-%m-%d")
-        }
-        
-        if "API_SPORTS_KEY" not in st.secrets:
-            st.warning("⚠️ Falta agregar 'API_SPORTS_KEY' en los Secrets.")
-            return ["América vs Cruz Azul", "Pumas vs Toluca"]
-
-        headers = {
-            'x-apisports-key': st.secrets["API_SPORTS_KEY"]
-        }
-        
-        try:
-            response = requests.get(url, headers=headers, params=querystring, timeout=10)
-            data = response.json()
-            
-            if data.get("errors") and len(data["errors"]) > 0:
-                st.error(f"Error de API: {data['errors']}")
-                return ["América vs Cruz Azul", "Pumas vs Toluca"]
-
-            partidos = []
-            for fixture in data.get('response', []):
-                local = fixture['teams']['home']['name']
-                visita = fixture['teams']['away']['name']
-                partidos.append(f"{local} vs {visita}")
-            
-            if not partidos:
-                # Si hoy es lunes/martes y no hay juegos en los próximos 8 días
-                return ["América vs Cruz Azul", "Pumas vs Toluca", "Sin partidos esta semana"]
-                
-            return partidos
-            
-        except Exception as e:
-            st.error(f"Error de conexión: {e}")
-            return ["América vs Cruz Azul", "Pumas vs Toluca"]
+        # Aquí solo pegas los 9 enfrentamientos de la jornada actual cada semana.
+        # Es 100% gratis, no depende de servidores externos y nunca falla.
+        return [
+            "San Luis vs Tijuana",
+            "Puebla vs Atlas",
+            "Guadalajara vs Mazatlán",
+            "Toluca vs Cruz Azul",
+            "Tigres vs América",
+            "Pachuca vs Querétaro",
+            "León vs Santos",
+            "Pumas vs Juárez",
+            "Necaxa vs Monterrey"
+        ]
 
     partidos_jornada_default = obtener_jornada_automatica()
 
