@@ -5,6 +5,7 @@ import scipy.stats as stats
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime, date
+from datetime import datetime, timedelta
 from scraper import obtener_tabla_ligamx
 from engine import calcular_idr
 
@@ -65,29 +66,38 @@ if deporte == "⚽ Fútbol (Liga MX)":
 
     lista_equipos = sorted(df_ligamx['Equipo'].tolist())
 
-   # --- NUEVA FUNCIÓN AUTOMÁTICA MEJORADA ---
-    @st.cache_data(ttl=3600*6) # Guarda los partidos 6 horas en caché
+   # --- NUEVA FUNCIÓN AUTOMÁTICA (VERSIÓN PLAN GRATUITO) ---
+    @st.cache_data(ttl=3600*6)
     def obtener_jornada_automatica():
         url = "https://v3.football.api-sports.io/fixtures"
-        # 💡 Quitamos "season": trae los próximos 9 partidos sin importar la etiqueta de año
-        querystring = {"league": "262", "next": "9"}
         
-        # 1. Verifica si la clave existe en Streamlit Secrets
+        # 1. Calculamos la fecha de hoy y 8 días hacia el futuro para abarcar la jornada completa
+        hoy = datetime.now()
+        futuro = hoy + timedelta(days=8)
+        
+        # 2. Usamos el rango de fechas permitido en el plan gratis en lugar del bloqueado "next"
+        querystring = {
+            "league": "262",
+            "season": "2026",
+            "from": hoy.strftime("%Y-%m-%d"),
+            "to": futuro.strftime("%Y-%m-%d")
+        }
+        
         if "API_SPORTS_KEY" not in st.secrets:
-            st.warning("⚠️ Falta agregar 'API_SPORTS_KEY' en los Secrets de Streamlit Cloud.")
-            return ["América vs Cruz Azul", "Pumas vs Toluca", "Tigres vs Monterrey"]
+            st.warning("⚠️ Falta agregar 'API_SPORTS_KEY' en los Secrets.")
+            return ["América vs Cruz Azul", "Pumas vs Toluca"]
 
         headers = {
             'x-apisports-key': st.secrets["API_SPORTS_KEY"]
         }
+        
         try:
             response = requests.get(url, headers=headers, params=querystring, timeout=10)
             data = response.json()
             
-            # 2. Si la API devuelve un mensaje de error (ej. llave inválida o cuota agotada)
             if data.get("errors") and len(data["errors"]) > 0:
-                st.error(f"Respuesta de API-Sports: {data['errors']}")
-                return ["América vs Cruz Azul", "Pumas vs Toluca", "Tigres vs Monterrey"]
+                st.error(f"Error de API: {data['errors']}")
+                return ["América vs Cruz Azul", "Pumas vs Toluca"]
 
             partidos = []
             for fixture in data.get('response', []):
@@ -96,14 +106,14 @@ if deporte == "⚽ Fútbol (Liga MX)":
                 partidos.append(f"{local} vs {visita}")
             
             if not partidos:
-                st.warning("No se encontraron próximos partidos programados en la API. Carga de respaldo activa.")
-                return ["América vs Cruz Azul", "Pumas vs Toluca", "Tigres vs Monterrey"]
+                # Si hoy es lunes/martes y no hay juegos en los próximos 8 días
+                return ["América vs Cruz Azul", "Pumas vs Toluca", "Sin partidos esta semana"]
                 
             return partidos
             
         except Exception as e:
             st.error(f"Error de conexión: {e}")
-            return ["América vs Cruz Azul", "Pumas vs Toluca", "Tigres vs Monterrey"]
+            return ["América vs Cruz Azul", "Pumas vs Toluca"]
 
     partidos_jornada_default = obtener_jornada_automatica()
 
