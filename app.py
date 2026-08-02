@@ -65,17 +65,30 @@ if deporte == "⚽ Fútbol (Liga MX)":
 
     lista_equipos = sorted(df_ligamx['Equipo'].tolist())
 
-    # --- NUEVA FUNCIÓN: API-SPORTS AUTOMÁTICA ---
+   # --- NUEVA FUNCIÓN AUTOMÁTICA MEJORADA ---
     @st.cache_data(ttl=3600*6) # Guarda los partidos 6 horas en caché
     def obtener_jornada_automatica():
         url = "https://v3.football.api-sports.io/fixtures"
-        querystring = {"league": "262", "season": "2026", "next": "9"}
+        # 💡 Quitamos "season": trae los próximos 9 partidos sin importar la etiqueta de año
+        querystring = {"league": "262", "next": "9"}
+        
+        # 1. Verifica si la clave existe en Streamlit Secrets
+        if "API_SPORTS_KEY" not in st.secrets:
+            st.warning("⚠️ Falta agregar 'API_SPORTS_KEY' en los Secrets de Streamlit Cloud.")
+            return ["América vs Cruz Azul", "Pumas vs Toluca", "Tigres vs Monterrey"]
+
         headers = {
             'x-apisports-key': st.secrets["API_SPORTS_KEY"]
         }
         try:
             response = requests.get(url, headers=headers, params=querystring, timeout=10)
             data = response.json()
+            
+            # 2. Si la API devuelve un mensaje de error (ej. llave inválida o cuota agotada)
+            if data.get("errors") and len(data["errors"]) > 0:
+                st.error(f"Respuesta de API-Sports: {data['errors']}")
+                return ["América vs Cruz Azul", "Pumas vs Toluca", "Tigres vs Monterrey"]
+
             partidos = []
             for fixture in data.get('response', []):
                 local = fixture['teams']['home']['name']
@@ -83,12 +96,14 @@ if deporte == "⚽ Fútbol (Liga MX)":
                 partidos.append(f"{local} vs {visita}")
             
             if not partidos:
-                return ["Error API vs Error API"]
+                st.warning("No se encontraron próximos partidos programados en la API. Carga de respaldo activa.")
+                return ["América vs Cruz Azul", "Pumas vs Toluca", "Tigres vs Monterrey"]
+                
             return partidos
             
         except Exception as e:
-            st.error("Error conectando con la API de API-Sports.")
-            return ["América vs Cruz Azul", "Pumas vs Toluca"] # Respaldo mínimo en caso de fallo crítico
+            st.error(f"Error de conexión: {e}")
+            return ["América vs Cruz Azul", "Pumas vs Toluca", "Tigres vs Monterrey"]
 
     partidos_jornada_default = obtener_jornada_automatica()
 
