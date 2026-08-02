@@ -60,44 +60,37 @@ if deporte == "⚽ Fútbol (Liga MX)":
         df = calcular_idr(df)
         return df
 
-    with st.spinner("⚡ Conectando con FBref y procesando motores matemáticos..."):
+    with st.spinner("⚡ Conectando con estadísticas y procesando motores matemáticos..."):
         df_ligamx = cargar_datos_completos()
 
     lista_equipos = sorted(df_ligamx['Equipo'].tolist())
 
-    @st.cache_data(ttl=3600*6)
-    def obtener_calendario_automatico():
-        url = "https://fbref.com/es/comps/31/horario/Horarios-y-resultados-de-Liga-MX"
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"}
+    # --- NUEVA FUNCIÓN: API-SPORTS AUTOMÁTICA ---
+    @st.cache_data(ttl=3600*6) # Guarda los partidos 6 horas en caché
+    def obtener_jornada_automatica():
+        url = "https://v3.football.api-sports.io/fixtures"
+        querystring = {"league": "262", "season": "2026", "next": "9"}
+        headers = {
+            'x-apisports-key': st.secrets["API_SPORTS_KEY"]
+        }
         try:
-            response = requests.get(url, headers=headers, timeout=8)
-            if response.status_code != 200: return None
-            tablas = pd.read_html(response.text)
-            df_cal = tablas[0]
-            col_sem = [c for c in df_cal.columns if any(k in str(c) for k in ['Sem', 'Wk', 'Jornada'])][0]
-            col_loc = [c for c in df_cal.columns if any(k in str(c) for k in ['Local', 'Home'])][0]
-            col_vis = [c for c in df_cal.columns if any(k in str(c) for k in ['Visitante', 'Away', 'Visita'])][0]
-            df_clean = df_cal[[col_sem, col_loc, col_vis]].dropna()
-            df_clean = df_clean[df_clean[col_sem].astype(str).str.isnumeric()].copy()
-            df_clean.columns = ['Jornada', 'Local', 'Visitante']
-            df_clean['Jornada'] = df_clean['Jornada'].astype(int)
-            df_clean['Partido'] = df_clean['Local'] + " vs " + df_clean['Visitante']
-            return df_clean
-        except Exception: return None
+            response = requests.get(url, headers=headers, params=querystring, timeout=10)
+            data = response.json()
+            partidos = []
+            for fixture in data.get('response', []):
+                local = fixture['teams']['home']['name']
+                visita = fixture['teams']['away']['name']
+                partidos.append(f"{local} vs {visita}")
+            
+            if not partidos:
+                return ["Error API vs Error API"]
+            return partidos
+            
+        except Exception as e:
+            st.error("Error conectando con la API de API-Sports.")
+            return ["América vs Cruz Azul", "Pumas vs Toluca"] # Respaldo mínimo en caso de fallo crítico
 
-    df_calendario = obtener_calendario_automatico()
-
-    if df_calendario is not None and not df_calendario.empty:
-        jornadas_disponibles = sorted(df_calendario['Jornada'].unique())
-        jornada_sel = st.selectbox("📅 Selecciona la Jornada Oficial:", options=jornadas_disponibles, index=1 if len(jornadas_disponibles)>1 else 0)
-        partidos_jornada_default = df_calendario[df_calendario['Jornada'] == jornada_sel]['Partido'].tolist()
-    else:
-        st.info("💡 Modo Offline: Mostrando enfrentamientos oficiales guardados en caché.")
-        partidos_jornada_default = [
-            "Cruz Azul vs Puebla", "Toluca vs Pumas", "Tigres vs San Luis",
-            "Atlante vs América", "Tijuana vs León", "Guadalajara vs Juárez",
-            "Santos Laguna vs Atlas", "Necaxa vs Monterrey", "Pachuca vs Querétaro"
-        ]
+    partidos_jornada_default = obtener_jornada_automatica()
 
     def ejecutar_laboratorio_modelos(local, visita, df):
         # 🛡️ 1. Búsqueda Inteligente (Flexible) para evitar errores de nombres (ej. "Atlante" en "Atlante FC")
@@ -131,8 +124,6 @@ if deporte == "⚽ Fútbol (Liga MX)":
         pj_l = max(s_loc.get('PJ', 1), 1)
         pj_v = max(s_vis.get('PJ', 1), 1)
         
-        # ... (De aquí hacia abajo, deja intacto el resto de tu función empezando por "# MÉTODO 1: Distribución de Poisson")
-
         # MÉTODO 1: Distribución de Poisson Ajustada
         atq_l = (s_loc['xG'] / pj_l) / xg_prom
         def_l = (s_loc['xGA'] / pj_l) / xg_prom
