@@ -51,7 +51,6 @@ def cargar_datos_completos():
     return df
 
 def ejecutar_laboratorio_modelos(local, visita, df):
-    # 🛡️ Búsqueda Inteligente
     def buscar_equipo(nombre, df_tabla):
         if df_tabla.empty or 'Equipo' not in df_tabla.columns: return None
         m = df_tabla[df_tabla['Equipo'].astype(str).str.contains(nombre, case=False, na=False)]
@@ -571,20 +570,28 @@ elif deporte == "🌎 Leagues Cup":
         df_mls = calcular_idr(df_mls)
         df_leagues_cup = pd.concat([df_ligamx, df_mls], ignore_index=True)
 
-    # 3. CARTELERA MANUAL DE LEAGUES CUP
+    # 3. CARTELERA REAL Y EXACTA DE TU CAPTURA DE PANTALLA
     @st.cache_data(ttl=3600*6)
     def obtener_jornada_leagues_cup():
         return [
-            "Inter Miami vs Tigres",
-            "LAFC vs Monterrey",
-            "Columbus Crew vs América",
-            "Seattle Sounders vs Pumas",
-            "Orlando City vs Cruz Azul"
+            "Columbus Crew vs Atlas",
+            "FC Cincinnati vs Pachuca",
+            "Charlotte vs Pumas",
+            "Minnesota Utd vs Juárez",
+            "Tigres vs Real Salt Lake",
+            "Vancouver vs Atlante",
+            "Monterrey vs Orlando City",
+            "Inter Miami vs San Luis",
+            "FC Dallas vs Querétaro",
+            "Nashville SC vs León",
+            "Toluca vs Seattle Sounders",
+            "LAFC vs Guadalajara",
+            "NYCFC vs Santos"
         ]
     
     partidos_lc = obtener_jornada_leagues_cup()
 
-    # ESTRUCTURA MATCH CENTER EXACTA A LIGA MX / CAPTURA
+    # ESTRUCTURA MATCH CENTER EXACTA A LIGA MX
     tab_match_lc, tab_lab_lc, tab_jornada_lc, tab_tabla_lc = st.tabs([
         "🏟️ Match Center & Momios en Vivo", 
         "🧪 Laboratorio Multi-Algoritmo (5 Métodos)",
@@ -642,17 +649,17 @@ elif deporte == "🌎 Leagues Cup":
                     if mejor_edge_lc >= 5.0:
                         st.markdown(f'<div class="value-card"><h3>💎 PICK DE VALOR (Value Bet)</h3><p><b>Recomendación:</b> {mejor_val_nombre_lc} (Momio: {m_amer_val_lc:+} / {m_dec_val_lc})</p><p><b>Prob. Modelo:</b> {m_prob_val_lc}% &nbsp;|&nbsp; <b>Prob. Casino:</b> {prob_implicada(m_dec_val_lc)}%</p><hr><p style="color:#34d399; font-weight:bold; margin:0;">🔥 VENTAJA MATEMÁTICA (EDGE): +{mejor_edge_lc}%</p></div>', unsafe_allow_html=True)
                     else:
-                        st.markdown(f'<div class="value-card" style="border-color: #eab308; background: #422006;"><h3>⚠️ SIN VALUE BET CLARO</h3><p>El margen más alto es <b>{mejor_val_nombre_lc}</b> con solo +{mejor_edge_lc}%.</p><hr><small style="color: #fde047;">Las líneas del casino están bien ajustadas. No hay ineficiencias de al menos +5.0% para justificar el riesgo. Guarda tu dinero.</small></div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="value-card" style="border-color: #eab308; background: #422006;"><h3>⚠️ SIN VALUE BET CLARO</h3><p>El margen más alto es <b>{mejor_val_nombre_lc}</b> con solo +{mejor_edge_lc}%.</p><hr><small style="color: #fde047;">Las líneas del casino están bien ajustadas. No hay ineficiencias de al menos +5.0% para justificar el riesgo.</small></div>', unsafe_allow_html=True)
 
                 col_p3_lc, col_p4_lc = st.columns(2)
                 with col_p3_lc:
                     top_marcador_lc = datos_lc['Marcadores_Top'][0]
-                    st.markdown(f'<div class="risk-card"><h3>🔥 PICK RISK (Alto Beneficio / Underdog)</h3><p><b>Recomendación:</b> Marcador Exacto {top_marcador_lc["Marcador"]}</p><p><b>Momio Americano Est.:</b> +600 a +850 &nbsp;|&nbsp; <b>Probabilidad:</b> {round(top_marcador_lc["Prob"], 1)}%</p><hr><small>Apuesta recreativa de alto rendimiento basada en Poisson.</small></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="risk-card"><h3>🔥 PICK RISK (Alto Beneficio / Underdog)</h3><p><b>Recomendación:</b> Marcador Exacto {top_marcador_lc["Marcador"]}</p><p><b>Probabilidad:</b> {round(top_marcador_lc["Prob"], 1)}%</p><hr><small>Apuesta recreativa de alto rendimiento basada en Poisson.</small></div>', unsafe_allow_html=True)
                 with col_p4_lc:
                     sgp_1_lc = f"{datos_lc['Local']} Gana o Empata" if datos_lc['Prob_1'] >= datos_lc['Prob_2'] else f"{datos_lc['Visita']} Gana o Empata"
                     sgp_2_lc = "Over 1.5 Goles" if datos_lc['Over_25'] > 45 else "Under 3.5 Goles"
                     sgp_3_lc = f"Over 8.5 Córners" if datos_lc['Corners_Total'] > 9.0 else "Under 10.5 Córners"
-                    st.markdown(f'<div class="parlay-card"><h3>🎰 PICK PARLAY (Same-Game Bet Builder)</h3><p><b>1. Resultado:</b> {sgp_1_lc}<br><b>2. Goles:</b> {sgp_2_lc}<br><b>3. Córners:</b> {sgp_3_lc}</p><hr><p style="margin:0;"><b>Cuota Combinada Est.:</b> +160 (2.60) &nbsp;|&nbsp; <b>Prob:</b> ~55%</p></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="parlay-card"><h3>🎰 PICK PARLAY (SGP)</h3><p><b>1. Resultado:</b> {sgp_1_lc}<br><b>2. Goles:</b> {sgp_2_lc}<br><b>3. Córners:</b> {sgp_3_lc}</p><hr><p style="margin:0;"><b>Prob:</b> ~55%</p></div>', unsafe_allow_html=True)
 
                 st.markdown("### 📊 Probabilidades Definitivas del Consenso")
                 lc_1, lc_2, lc_3, lc_4 = st.columns(4)
@@ -669,10 +676,10 @@ elif deporte == "🌎 Leagues Cup":
             d_lab_lc = ejecutar_laboratorio_modelos(eqs_lab_lc[0].strip(), eqs_lab_lc[1].strip(), df_leagues_cup)
             
             if d_lab_lc:
-                st.markdown(f'<div class="meta-model-card"><h3 style="color:#fecaca; margin:0;">👑 CONSENSO DEFINITIVO (META-MODELO PROMEDIO)</h3><h1 style="color:#ffffff; margin:10px 0;">{d_lab_lc["Local"]}: {d_lab_lc["Prob_1"]}% &nbsp;|&nbsp; EMPATE: {d_lab_lc["Prob_X"]}% &nbsp;|&nbsp; {d_lab_lc["Visita"]}: {d_lab_lc["Prob_2"]}%</h1><p style="color:#fca5a5; margin:0;">Promedio ponderado exacto cruzando las 5 metodologías independientes.</p></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="meta-model-card"><h3 style="color:#fecaca; margin:0;">👑 CONSENSO DEFINITIVO</h3><h1 style="color:#ffffff; margin:10px 0;">{d_lab_lc["Local"]}: {d_lab_lc["Prob_1"]}% &nbsp;|&nbsp; EMPATE: {d_lab_lc["Prob_X"]}% &nbsp;|&nbsp; {d_lab_lc["Visita"]}: {d_lab_lc["Prob_2"]}%</h1></div>', unsafe_allow_html=True)
                 
                 tabla_comp_lc = {
-                    "Modelo Matemático / Metodología": ["1️⃣ Distribución de Poisson (xG + Localía)", "2️⃣ Rating ELO Dinámico (Jerarquía y Puntos)", "3️⃣ Simulación Monte Carlo (5,000 Partidos)", "4️⃣ Eficiencia IDR (Penetración en Área)", "5️⃣ Forma Reciente (Pts/PJ + Gol Diferencia)"],
+                    "Modelo Matemático / Metodología": ["1️⃣ Distribución de Poisson", "2️⃣ Rating ELO Dinámico", "3️⃣ Simulación Monte Carlo", "4️⃣ Eficiencia IDR", "5️⃣ Forma Reciente"],
                     f"🏠 {d_lab_lc['Local']} (1)": [f"{d_lab_lc['M1_Poisson'][0]}%", f"{d_lab_lc['M2_ELO'][0]}%", f"{d_lab_lc['M3_MonteCarlo'][0]}%", f"{d_lab_lc['M4_IDR'][0]}%", f"{d_lab_lc['M5_Forma'][0]}%"],
                     "🤝 Empate (X)": [f"{d_lab_lc['M1_Poisson'][1]}%", f"{d_lab_lc['M2_ELO'][1]}%", f"{d_lab_lc['M3_MonteCarlo'][1]}%", f"{d_lab_lc['M4_IDR'][1]}%", f"{d_lab_lc['M5_Forma'][1]}%"],
                     f"✈️ {d_lab_lc['Visita']} (2)": [f"{d_lab_lc['M1_Poisson'][2]}%", f"{d_lab_lc['M2_ELO'][2]}%", f"{d_lab_lc['M3_MonteCarlo'][2]}%", f"{d_lab_lc['M4_IDR'][2]}%", f"{d_lab_lc['M5_Forma'][2]}%"]
@@ -694,7 +701,7 @@ elif deporte == "🌎 Leagues Cup":
                     picks_seg_lc += f"⚽ <b>{d['Local']} vs {d['Visita']}:</b> {pick}<br>"
                     cuota_tot_dec_lc *= 1.25
                 mom_amer_seg_lc = int((cuota_tot_dec_lc - 1.0) * 100) if cuota_tot_dec_lc >= 2.0 else int(-100 / (cuota_tot_dec_lc - 1.0))
-                st.markdown(f'<div class="safe-card">{picks_seg_lc}<hr><h4>🎟️ Momio: {mom_amer_seg_lc:+} ({round(cuota_tot_dec_lc, 2)})</h4><small>Top 4 dominio IDR protegidos.</small></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="safe-card">{picks_seg_lc}<hr><h4>🎟️ Momio: {mom_amer_seg_lc:+} ({round(cuota_tot_dec_lc, 2)})</h4></div>', unsafe_allow_html=True)
 
             with col_j2_lc:
                 st.markdown("<h3 style='color:#10b981;'>💎 Parlay de Valor</h3>", unsafe_allow_html=True)
@@ -704,7 +711,7 @@ elif deporte == "🌎 Leagues Cup":
                     picks_gol_lc += f"💥 <b>{d['Local']} vs {d['Visita']}:</b> {pick} ({d['Over_25']}% prob)<br>"
                     cuota_tot_gol_lc *= 1.75
                 mom_amer_gol_lc = int((cuota_tot_gol_lc - 1.0) * 100) if cuota_tot_gol_lc >= 2.0 else int(-100 / (cuota_tot_gol_lc - 1.0))
-                st.markdown(f'<div class="value-card">{picks_gol_lc}<hr><h4>🎟️ Momio: {mom_amer_gol_lc:+} ({round(cuota_tot_gol_lc, 2)})</h4><small>Top 3 ofensivos de la semana.</small></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="value-card">{picks_gol_lc}<hr><h4>🎟️ Momio: {mom_amer_gol_lc:+} ({round(cuota_tot_gol_lc, 2)})</h4></div>', unsafe_allow_html=True)
 
             with col_j3_lc:
                 st.markdown("<h3 style='color:#f97316;'>🔥 Parlay Risk</h3>", unsafe_allow_html=True)
@@ -716,7 +723,7 @@ elif deporte == "🌎 Leagues Cup":
                     picks_val_lc += f"🔥 <b>{fav}</b> Gana Directo (Est: {cuota_est_casino})<br>"
                     cuota_tot_val_lc *= cuota_est_casino
                 mom_amer_val_lc = int((cuota_tot_val_lc - 1.0) * 100) if cuota_tot_val_lc >= 2.0 else int(-100 / (cuota_tot_val_lc - 1.0))
-                st.markdown(f'<div class="risk-card">{picks_val_lc}<hr><h4>🎟️ Momio Est: {mom_amer_val_lc:+} ({round(cuota_tot_val_lc, 2)})</h4><small>Victorias directas -7% vig.</small></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="risk-card">{picks_val_lc}<hr><h4>🎟️ Momio Est: {mom_amer_val_lc:+} ({round(cuota_tot_val_lc, 2)})</h4></div>', unsafe_allow_html=True)
 
     with tab_tabla_lc:
         st.subheader("📈 Ranking de Dominio Real (IDR) & Súper Tabla General (Liga MX + MLS)")
