@@ -5,3 +5,6 @@ scipy
 requests
 beautifulsoup4
 matplotlib
+requests
+cloudscraper
+lxml
