@@ -1,4 +1,5 @@
 import streamlit as st
+import cloudscraper
 import pandas as pd
 import numpy as np
 import scipy.stats as stats
@@ -711,14 +712,19 @@ elif deporte == "🌎 Leagues Cup":
     st.title("🌎 Leagues Cup - Máquina de Parlays y Picks")
     st.write("Análisis masivo cruzando métricas de la MLS (FBref) y la Liga MX.")
 
-    # 1. SCRAPER ROBUSTO PARA LA MLS DESDE FBREF
+    # 1. SCRAPER ROBUSTO (ANTI-CLOUDFLARE) PARA LA MLS DESDE FBREF
     @st.cache_data(ttl=3600*24) # Caché de 24 horas obligatorio para evitar bloqueos
     def obtener_tabla_mls():
         url = "https://fbref.com/es/comps/22/Estadisticas-de-Major-League-Soccer"
-        # Disfrazamos la petición para que FBref no detecte el bot
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
         try:
-            res = requests.get(url, headers=headers, timeout=12)
+            # Iniciamos el scraper diseñado para saltar Cloudflare
+            scraper = cloudscraper.create_scraper(browser={
+                'browser': 'chrome',
+                'platform': 'windows',
+                'desktop': True
+            })
+            
+            res = scraper.get(url, timeout=15)
             if res.status_code != 200: return pd.DataFrame()
             
             tablas = pd.read_html(res.text)
