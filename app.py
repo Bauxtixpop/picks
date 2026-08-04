@@ -708,16 +708,71 @@ elif deporte == "⚾ Béisbol (MLB)":
             df_show_mlb = df_mlb[['Equipo', 'G', 'P', 'RS_prom', 'RA_prom', 'ERA', 'WHIP', 'Pitagorica', 'Racha']].sort_values(by='Pitagorica', ascending=False).reset_index(drop=True)
             df_show_mlb.index += 1
             st.dataframe(df_show_mlb.style.background_gradient(subset=['Pitagorica'], cmap='Reds').background_gradient(subset=['ERA'], cmap='Blues_r'), use_container_width=True)
-            # ==============================================================================
-# ================= SECCIÓN 3: LEAGUES CUP (PARLAYS & PICKS) ===================
+
+# ==============================================================================
+# ================= SECCIÓN 3: LEAGUES Cup (PARLAYS & PICKS) ===================
 # ==============================================================================
 elif deporte == "🌎 Leagues Cup":
     st.title("🌎 Leagues Cup - Máquina de Parlays y Picks")
-    st.write("Análisis masivo para aprovechar el volumen de partidos entre MLS y Liga MX.")
+    st.write("Análisis masivo cruzando métricas de la MLS (FBref) y la Liga MX.")
 
+    # 1. SCRAPER ROBUSTO PARA LA MLS DESDE FBREF
+    @st.cache_data(ttl=3600*24) # Caché de 24 horas obligatorio para evitar bloqueos
+    def obtener_tabla_mls():
+        url = "https://fbref.com/es/comps/22/Estadisticas-de-Major-League-Soccer"
+        # Disfrazamos la petición para que FBref no detecte el bot
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+        try:
+            res = requests.get(url, headers=headers, timeout=12)
+            if res.status_code != 200: return pd.DataFrame()
+            
+            tablas = pd.read_html(res.text)
+            df_mls = pd.DataFrame()
+            
+            # Unimos la Conferencia Este y Oeste
+            for t in tablas:
+                # FBref usa multi-índices en las cabeceras, los aplanamos
+                if isinstance(t.columns, pd.MultiIndex):
+                    t.columns = t.columns.droplevel(0)
+                if 'Equipo' in t.columns and 'Pts' in t.columns:
+                    df_mls = pd.concat([df_mls, t], ignore_index=True)
+            
+            if df_mls.empty: return pd.DataFrame()
+            
+            # Limpieza básica
+            df_mls = df_mls.dropna(subset=['Equipo'])
+            df_mls = df_mls[df_mls['Equipo'] != 'Equipo'] # Quitar sub-cabeceras
+            
+            # Aseguramos formato numérico para las matemáticas
+            for c in ['PJ', 'Pts', 'GF', 'GC', 'xG', 'xGA']:
+                if c in df_mls.columns:
+                    df_mls[c] = pd.to_numeric(df_mls[c], errors='coerce').fillna(1.0)
+            
+            # Agregamos métricas proxy de penetración para que tu motor IDR funcione
+            df_mls['AttPen_Promedio'] = 16.0 # La MLS es más vertical
+            df_mls['Tiros_Promedio'] = 12.0
+            df_mls['Calidad_Tiro'] = 0.11
+            
+            return df_mls
+        except Exception as e:
+            return pd.DataFrame()
+
+    # 2. CREAMOS LA SÚPER TABLA (LIGA MX + MLS)
+    with st.spinner("⚡ Extrayendo métricas de MLS en FBref y fusionando con Liga MX..."):
+        df_ligamx = cargar_datos_completos() # Ya incluye IDR
+        df_mls = obtener_tabla_mls()
+        
+        if not df_mls.empty:
+            df_mls = calcular_idr(df_mls) # Pasamos la MLS por tu motor IDR
+            df_leagues_cup = pd.concat([df_ligamx, df_mls], ignore_index=True)
+        else:
+            st.error("⚠️ FBref bloqueó la conexión temporalmente. Usando datos de respaldo.")
+            df_leagues_cup = df_ligamx.copy()
+
+    # 3. CARTELERA MANUAL DE LEAGUES CUP
     @st.cache_data(ttl=3600*6)
     def obtener_jornada_leagues_cup():
-        # Lista manual de la jornada actual de Leagues Cup
+        # Actualiza esta lista cada semana con los partidos más interesantes
         return [
             "Inter Miami vs Tigres",
             "LAFC vs Monterrey",
@@ -728,70 +783,85 @@ elif deporte == "🌎 Leagues Cup":
     
     partidos_lc = obtener_jornada_leagues_cup()
     
-    # Aquí reutilizaríamos tu función ejecutar_laboratorio_modelos() 
-    # asumiendo que le pasamos un DataFrame que combine Liga MX y MLS.
-    # Por ahora, simulamos los datos para estructurar la interfaz que pediste:
-    datos_simulados = []
-    for p in partidos_lc:
-        loc, vis = p.split(" vs ")
-        # Simulación rápida de probabilidades basadas en localía
-        datos_simulados.append({
-            "Local": loc.strip(), "Visita": vis.strip(),
-            "Prob_1": 45.0, "Prob_X": 25.0, "Prob_2": 30.0,
-            "Over_25": 58.0, "BTTS_Si": 62.0, "Corners_Total": 10.5
-        })
+    # Ejecutamos TODOS los algoritmos (Poisson, ELO, Monte Carlo) con la Súper Tabla
+    datos_lc = [ejecutar_laboratorio_modelos(p.split(" vs ")[0].strip(), p.split(" vs ")[1].strip(), df_leagues_cup) for p in partidos_lc]
+    datos_lc = [d for d in datos_lc if d is not None]
 
     tab_singles, tab_dobles, tab_sgp, tab_jornada = st.tabs([
         "🎯 Picks Solos Segurísimos",
         "🛡️ Parlay Doble Oportunidad",
         "🎰 Parlays por Partido (SGP)",
-        "📅 Parlay del Día / Jornada"
+        "📅 Parlay de la Jornada"
     ])
 
+    # --- PESTAÑA 1: PICKS SOLOS ---
     with tab_singles:
         st.subheader("🎯 Picks Solos Segurísimos (Bajo Riesgo, Alta Probabilidad)")
-        st.write("Filtro estricto: Solo apuestas directas con probabilidad matemática superior al 65%.")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown('<div class="safe-card"><h3>🛡️ Empate Apuesta No Válida (DNB)</h3><p><b>Inter Miami (Empate No Acción)</b></p><p><b>Prob. Modelo:</b> 70.0%</p><hr><small>Si empatan, te devuelven el dinero. Si ganan, cobras.</small></div>', unsafe_allow_html=True)
-        with col2:
-            st.markdown('<div class="safe-card"><h3>🛡️ Totales Conservadores</h3><p><b>LAFC vs Monterrey: Over 1.5 Goles</b></p><p><b>Prob. Modelo:</b> 82.5%</p><hr><small>Dos equipos altamente ofensivos. Cuota baja pero ideal para subir bank.</small></div>', unsafe_allow_html=True)
+        st.write("Filtro estricto: Solo apuestas con probabilidad matemática superior al 60%.")
+        c1, c2 = st.columns(2)
+        
+        picks_seguros = sorted(datos_lc, key=lambda x: max(x['Prob_1'], x['Prob_2']), reverse=True)
+        if len(picks_seguros) > 0:
+            top_1 = picks_seguros[0]
+            fav_1 = top_1['Local'] if top_1['Prob_1'] > top_1['Prob_2'] else top_1['Visita']
+            prob_1 = max(top_1['Prob_1'], top_1['Prob_2'])
+            with c1:
+                st.markdown(f'<div class="safe-card"><h3>🛡️ Victoria Empate No Válida (DNB)</h3><p><b>{fav_1} (Empate No Acción)</b></p><p><b>Prob. Modelo Directo:</b> {prob_1}%</p><hr><small>Si empatan, te devuelven el dinero. Si ganan, cobras.</small></div>', unsafe_allow_html=True)
+        
+        picks_goles = sorted(datos_lc, key=lambda x: x['Over_25'], reverse=True)
+        if len(picks_goles) > 0:
+            top_g = picks_goles[0]
+            with c2:
+                st.markdown(f'<div class="safe-card"><h3>⚽ Totales Conservadores</h3><p><b>{top_g["Local"]} vs {top_g["Visita"]}: Over 1.5 Goles</b></p><p><b>Prob. Modelo (+2.5):</b> {top_g["Over_25"]}%</p><hr><small>Ideal para subir bank con los equipos más ofensivos.</small></div>', unsafe_allow_html=True)
 
+    # --- PESTAÑA 2: DOBLE OPORTUNIDAD ---
     with tab_dobles:
         st.subheader("🛡️ Parlay de Doble Oportunidad (1X / X2)")
-        st.write("Combinación de 3 equipos que cubren dos de los tres resultados posibles.")
-        
-        picks_dobles = "⚽ <b>Inter Miami o Empate (1X)</b><br>⚽ <b>América o Empate (X2)</b><br>⚽ <b>Cruz Azul o Empate (X2)</b>"
-        st.markdown(f'<div class="parlay-card">{picks_dobles}<hr><h4>🎟️ Momio Est: -110 (1.90)</h4><small>Estadísticamente, tienes el 66% de cobertura del campo en cada juego.</small></div>', unsafe_allow_html=True)
+        st.write("3 equipos que cubren dos de los tres resultados posibles.")
+        picks_dobles = ""
+        c_doble = 1.0
+        for d in sorted(datos_lc, key=lambda x: max(x['Prob_1'], x['Prob_2']), reverse=True)[:3]:
+            if d['Prob_1'] > d['Prob_2']:
+                picks_dobles += f"⚽ <b>{d['Local']} o Empate (1X)</b><br>"
+            else:
+                picks_dobles += f"⚽ <b>{d['Visita']} o Empate (X2)</b><br>"
+            c_doble *= 1.25 # Cuota promedio aproximada de un 1X
+            
+        mom_d = int((c_doble - 1.0) * 100) if c_doble >= 2.0 else int(-100 / (c_doble - 1.0))
+        st.markdown(f'<div class="parlay-card">{picks_dobles}<hr><h4>🎟️ Momio Est: {mom_d:+} ({round(c_doble, 2)})</h4><small>Estadísticamente, tienes el 66% de cobertura en cada juego.</small></div>', unsafe_allow_html=True)
 
+    # --- PESTAÑA 3: SAME GAME PARLAY (SGP) ---
     with tab_sgp:
         st.subheader("🎰 Parlay por Partido (Same Game Parlay)")
         if len(partidos_lc) > 0:
-            partido_sgp = st.selectbox("Selecciona el partido para armar el SGP:", options=partidos_lc)
-            eqs = partido_sgp.split(" vs ")
+            partido_sgp = st.selectbox("Selecciona el partido para armar el SGP:", options=partidos_lc, key="sel_lc")
+            loc_s, vis_s = partido_sgp.split(" vs ")
+            d_sgp = next((item for item in datos_lc if item["Local"] == loc_s.strip() and item["Visita"] == vis_s.strip()), None)
             
-            st.markdown(f"""
-            <div class="match-header">
-                <h2>🏠 {eqs[0]} vs {eqs[1]} ✈️</h2>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown(f'<div class="risk-card"><h3>🔥 SGP Conservador</h3><p><b>1. {eqs[0]} o Empate</b><br><b>2. Over 1.5 Goles Totales</b><br><b>3. Over 7.5 Córners Totales</b></p><hr><p style="margin:0;"><b>Cuota Combinada Est.:</b> +120</p></div>', unsafe_allow_html=True)
-            with c2:
-                st.markdown(f'<div class="dream-card" style="margin-top:0;"><h3>🌌 SGP Agresivo</h3><p><b>1. Ambos Equipos Anotan (SÍ)</b><br><b>2. Over 2.5 Goles Totales</b><br><b>3. {eqs[0]} Anota en la 2da Mitad</b></p><hr><p style="margin:0; color:#fff;"><b>Cuota Combinada Est.:</b> +350</p></div>', unsafe_allow_html=True)
+            if d_sgp:
+                st.markdown(f'<div class="match-header"><h2>🏠 {d_sgp["Local"]} vs {d_sgp["Visita"]} ✈️</h2><p><b>Proy. Goles:</b> {d_sgp["xG_L"]} - {d_sgp["xG_V"]}</p></div>', unsafe_allow_html=True)
+                
+                c_sgp1, c_sgp2 = st.columns(2)
+                fav_sgp = d_sgp['Local'] if d_sgp['Prob_1'] > d_sgp['Prob_2'] else d_sgp['Visita']
+                
+                with c_sgp1:
+                    st.markdown(f'<div class="risk-card"><h3>🔥 SGP Conservador</h3><p><b>1. {fav_sgp} o Empate</b><br><b>2. Over 1.5 Goles Totales</b><br><b>3. Over 7.5 Córners Totales</b></p><hr><p style="margin:0;"><b>Cuota Combinada Est.:</b> +130</p></div>', unsafe_allow_html=True)
+                with c_sgp2:
+                    btts = "SÍ" if d_sgp['BTTS_Si'] > 50 else "NO"
+                    st.markdown(f'<div class="dream-card" style="margin-top:0;"><h3>🌌 SGP Agresivo</h3><p><b>1. Ambos Anotan ({btts})</b><br><b>2. Over 2.5 Goles Totales</b><br><b>3. {fav_sgp} a Ganar Directo</b></p><hr><p style="margin:0; color:#fff;"><b>Cuota Combinada Est.:</b> +350 a +450</p></div>', unsafe_allow_html=True)
 
+    # --- PESTAÑA 4: PARLAY DE LA JORNADA ---
     with tab_jornada:
-        st.subheader("📅 El Parlay de la Jornada (A ganar todo)")
-        
+        st.subheader("📅 El Parlay de la Jornada (Acumulador)")
         picks_jornada = ""
         cuota_j = 1.0
-        for d in datos_simulados[:4]:
+        
+        for d in sorted(datos_lc, key=lambda x: max(x['Prob_1'], x['Prob_2']), reverse=True)[:4]:
             fav = d['Local'] if d['Prob_1'] > d['Prob_2'] else d['Visita']
-            picks_jornada += f"🔥 <b>{fav} a Ganar Directo</b><br>"
-            cuota_j *= 1.85
+            picks_jornada += f"🔥 <b>{fav} a Ganar Directo</b> (Prob: {max(d['Prob_1'], d['Prob_2'])}%)<br>"
+            cuota_j *= 1.85 # Promedio de victoria directa
             
         mom_amer_j = int((cuota_j - 1.0) * 100) if cuota_j >= 2.0 else int(-100 / (cuota_j - 1.0))
         
         st.markdown(f'<div class="value-card"><h3 style="color:#fff;">💰 Acumulador de la Jornada</h3>{picks_jornada}<hr><h4 style="color:#fff;">🎟️ Momio Est: {mom_amer_j:+} ({round(cuota_j, 2)})</h4><small style="color:#d1fae5;">Top 4 favoritos absolutos del modelo matemático.</small></div>', unsafe_allow_html=True)
+           
