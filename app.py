@@ -712,27 +712,27 @@ elif deporte == "🌎 Leagues Cup":
     st.title("🌎 Leagues Cup - Máquina de Parlays y Picks")
     st.write("Análisis masivo cruzando métricas de la MLS (FBref) y la Liga MX.")
 
-    # 1. SCRAPER ROBUSTO (ANTI-CLOUDFLARE) PARA LA MLS DESDE FBREF
-    @st.cache_data(ttl=3600*24) # Caché de 24 horas obligatorio para evitar bloqueos
+    # 1. SCRAPER PROXY PARA FBRef (DESCARGA DE LA MLS COMPLETA)
+    @st.cache_data(ttl=3600*24) # 1 petición al día para cuidar la cuota gratis
     def obtener_tabla_mls():
-        url = "https://fbref.com/es/comps/22/Estadisticas-de-Major-League-Soccer"
+        url_objetivo = "https://fbref.com/es/comps/22/Estadisticas-de-Major-League-Soccer"
+        
+        # 🔑 1. INGRESA TU API KEY DE SCRAPERAPI
+        API_KEY = "e5bf56968d9196c900a3dd8abbe93917" 
+        
+        # 2. Construimos la ruta del Proxy para engañar a Cloudflare
+        proxy_url = f"http://api.scraperapi.com?api_key={API_KEY}&url={url_objetivo}"
+        
         try:
-            # Iniciamos el scraper diseñado para saltar Cloudflare
-            scraper = cloudscraper.create_scraper(browser={
-                'browser': 'chrome',
-                'platform': 'windows',
-                'desktop': True
-            })
-            
-            res = scraper.get(url, timeout=15)
+            # Hacemos la petición a través del proxy (le damos 30 seg porque los proxys tardan un poco)
+            res = requests.get(proxy_url, timeout=30)
             if res.status_code != 200: return pd.DataFrame()
             
             tablas = pd.read_html(res.text)
             df_mls = pd.DataFrame()
             
-            # Unimos la Conferencia Este y Oeste
+            # Unimos la Conferencia Este y Oeste completas
             for t in tablas:
-                # FBref usa multi-índices en las cabeceras, los aplanamos
                 if isinstance(t.columns, pd.MultiIndex):
                     t.columns = t.columns.droplevel(0)
                 if 'Equipo' in t.columns and 'Pts' in t.columns:
@@ -742,15 +742,15 @@ elif deporte == "🌎 Leagues Cup":
             
             # Limpieza básica
             df_mls = df_mls.dropna(subset=['Equipo'])
-            df_mls = df_mls[df_mls['Equipo'] != 'Equipo'] # Quitar sub-cabeceras
+            df_mls = df_mls[df_mls['Equipo'] != 'Equipo'] 
             
-            # Aseguramos formato numérico para las matemáticas
+            # Aseguramos formato numérico de todas las estadísticas
             for c in ['PJ', 'Pts', 'GF', 'GC', 'xG', 'xGA']:
                 if c in df_mls.columns:
                     df_mls[c] = pd.to_numeric(df_mls[c], errors='coerce').fillna(1.0)
             
-            # Agregamos métricas proxy de penetración para que tu motor IDR funcione
-            df_mls['AttPen_Promedio'] = 16.0 # La MLS es más vertical
+            # Agregamos métricas proxy de penetración para tu motor IDR
+            df_mls['AttPen_Promedio'] = 16.0 
             df_mls['Tiros_Promedio'] = 12.0
             df_mls['Calidad_Tiro'] = 0.11
             
