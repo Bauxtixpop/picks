@@ -4,8 +4,7 @@ import numpy as np
 import scipy.stats as stats
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime, date
-from datetime import datetime, timedelta
+from datetime import datetime, date, timedelta
 from scraper import obtener_tabla_ligamx
 from engine import calcular_idr
 
@@ -35,13 +34,24 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 2. FUNCIONES DE CONVERSIÓN DE MOMIOS
+# 2. FUNCIONES DE CONVERSIÓN Y MATEMÁTICAS
 def americano_a_decimal(momio_amer):
     if momio_amer >= 0: return round((momio_amer / 100.0) + 1.0, 2)
     else: return round((100.0 / abs(momio_amer)) + 1.0, 2)
 
 def prob_implicada(decimal_odd):
     return round((1.0 / decimal_odd) * 100.0, 1)
+
+def proyeccion_ponches(era, k9, linea):
+    # Algoritmo de Durabilidad: Estima las entradas lanzadas (IP) en base a la efectividad (ERA)
+    ip_esperadas = max(3.5, 7.5 - (era * 0.45))
+    # Ponches proyectados matemáticamente
+    lambda_k = (k9 / 9.0) * ip_esperadas
+    # Distribución Poisson para calcular probabilidad de romper la línea
+    k_enteros = int(linea) # Convierte línea de 5.5 a 5 para el cálculo Poisson
+    prob_under = stats.poisson.cdf(k_enteros, lambda_k) * 100.0
+    prob_over = 100.0 - prob_under
+    return round(lambda_k, 1), round(prob_over, 1), round(prob_under, 1)
 
 # 3. SELECTOR DE DEPORTE (MENÚ LATERAL)
 st.sidebar.title("🏆 Centro de Mando")
@@ -66,10 +76,8 @@ if deporte == "⚽ Fútbol (Liga MX)":
 
     lista_equipos = sorted(df_ligamx['Equipo'].tolist())
 
-  # --- CONTROL DE JORNADA MANUAL (Evita bloqueos de pago de APIs) ---
     @st.cache_data(ttl=3600*6)
     def obtener_jornada_automatica():
-        # Lista actualizada con la Jornada 3 del Apertura
         return [
             "Puebla vs Guadalajara",
             "San Luis vs Tijuana",
@@ -85,38 +93,28 @@ if deporte == "⚽ Fútbol (Liga MX)":
     partidos_jornada_default = obtener_jornada_automatica()
 
     def ejecutar_laboratorio_modelos(local, visita, df):
-        # 🛡️ 1. Búsqueda Inteligente (Flexible) para evitar errores de nombres (ej. "Atlante" en "Atlante FC")
         def buscar_equipo(nombre, df_tabla):
             if df_tabla.empty or 'Equipo' not in df_tabla.columns: return None
-            # Búsqueda por texto contenido (sin importar mayúsculas/minúsculas)
             m = df_tabla[df_tabla['Equipo'].astype(str).str.contains(nombre, case=False, na=False)]
             if not m.empty: return m.iloc[0].to_dict()
-            # Búsqueda por la última palabra (ej. "Azul" de Cruz Azul)
             m = df_tabla[df_tabla['Equipo'].astype(str).str.contains(nombre.split()[-1], case=False, na=False)]
             if not m.empty: return m.iloc[0].to_dict()
-            # Búsqueda por la primera palabra (ej. "Santos" o "Pumas")
             m = df_tabla[df_tabla['Equipo'].astype(str).str.contains(nombre.split()[0], case=False, na=False)]
             if not m.empty: return m.iloc[0].to_dict()
             return None
 
         s_loc = buscar_equipo(local, df)
-        if s_loc:
-            s_loc['Equipo'] = local
-        else:
-            # Respaldo estadístico automático si el equipo es nuevo en la liga o falla la conexión
-            s_loc = {"Equipo": local, "PJ": 1, "Pts": 1.5, "GF": 1.5, "GC": 1.5, "xG": 1.4, "xGA": 1.4, "IDR": 50.0, "AttPen_Promedio": 15.0, "Tiros_Promedio": 11.0, "Calidad_Tiro": 0.10}
+        if s_loc: s_loc['Equipo'] = local
+        else: s_loc = {"Equipo": local, "PJ": 1, "Pts": 1.5, "GF": 1.5, "GC": 1.5, "xG": 1.4, "xGA": 1.4, "IDR": 50.0, "AttPen_Promedio": 15.0, "Tiros_Promedio": 11.0, "Calidad_Tiro": 0.10}
 
         s_vis = buscar_equipo(visita, df)
-        if s_vis:
-            s_vis['Equipo'] = visita
-        else:
-            s_vis = {"Equipo": visita, "PJ": 1, "Pts": 1.5, "GF": 1.5, "GC": 1.5, "xG": 1.4, "xGA": 1.4, "IDR": 50.0, "AttPen_Promedio": 15.0, "Tiros_Promedio": 11.0, "Calidad_Tiro": 0.10}
+        if s_vis: s_vis['Equipo'] = visita
+        else: s_vis = {"Equipo": visita, "PJ": 1, "Pts": 1.5, "GF": 1.5, "GC": 1.5, "xG": 1.4, "xGA": 1.4, "IDR": 50.0, "AttPen_Promedio": 15.0, "Tiros_Promedio": 11.0, "Calidad_Tiro": 0.10}
 
         xg_prom = df['xG'].mean() / 10.0 if not df.empty and df['xG'].mean() > 0 else 1.3
         pj_l = max(s_loc.get('PJ', 1), 1)
         pj_v = max(s_vis.get('PJ', 1), 1)
         
-        # MÉTODO 1: Distribución de Poisson Ajustada
         atq_l = (s_loc['xG'] / pj_l) / xg_prom
         def_l = (s_loc['xGA'] / pj_l) / xg_prom
         atq_v = (s_vis['xG'] / pj_v) / xg_prom
@@ -143,7 +141,6 @@ if deporte == "⚽ Fútbol (Liga MX)":
         m1 = [round((p1_pois/tot_pois)*100, 1), round((px_pois/tot_pois)*100, 1), round((p2_pois/tot_pois)*100, 1)]
         marcadores_top = pd.DataFrame(marcadores).sort_values(by="Prob", ascending=False).head(3).to_dict(orient="records")
 
-        # MÉTODO 2: Rating ELO Dinámico
         elo_l = 1500 + (s_loc['Pts'] * 15) + (s_loc['IDR'] * 2) + 35
         elo_v = 1500 + (s_vis['Pts'] * 15) + (s_vis['IDR'] * 2)
         diff_elo = elo_v - elo_l
@@ -153,7 +150,6 @@ if deporte == "⚽ Fútbol (Liga MX)":
         rem_elo = 100.0 - px_elo
         m2 = [round(prob_elo_l * rem_elo, 1), round(px_elo, 1), round(prob_elo_v * rem_elo, 1)]
 
-        # MÉTODO 3: Simulación Monte Carlo
         np.random.seed(42)
         sims_l = np.random.poisson(lam_l, 5000)
         sims_v = np.random.poisson(lam_v, 5000)
@@ -162,7 +158,6 @@ if deporte == "⚽ Fútbol (Liga MX)":
         wins_v = np.sum(sims_l < sims_v)
         m3 = [round((wins_l/5000)*100, 1), round((draws/5000)*100, 1), round((wins_v/5000)*100, 1)]
 
-        # MÉTODO 4: Índice de Dominio Real (IDR Táctico)
         fuerza_idr_l = max(s_loc['IDR'] + (s_loc['AttPen_Promedio'] * 1.5), 10) * 1.10
         fuerza_idr_v = max(s_vis['IDR'] + (s_vis['AttPen_Promedio'] * 1.5), 10)
         tot_idr = fuerza_idr_l + fuerza_idr_v
@@ -171,7 +166,6 @@ if deporte == "⚽ Fútbol (Liga MX)":
         px_idr = 100.0 - (p1_idr + p2_idr)
         m4 = [round(p1_idr, 1), round(px_idr, 1), round(p2_idr, 1)]
 
-        # MÉTODO 5: Forma del Torneo
         ef_l = ((s_loc['Pts']/pj_l) * 25.0) + ((s_loc['GF'] - s_loc['GC']) * 2.0) + 15.0
         ef_v = ((s_vis['Pts']/pj_v) * 25.0) + ((s_vis['GF'] - s_vis['GC']) * 2.0)
         ef_l = max(ef_l, 5.0)
@@ -182,12 +176,10 @@ if deporte == "⚽ Fútbol (Liga MX)":
         px_form = 100.0 - (p1_form + p2_form)
         m5 = [round(p1_form, 1), round(px_form, 1), round(p2_form, 1)]
 
-        # 👑 CONSENSO META-MODELO (Ajuste Liga MX: Menos ELO, Más Forma Reciente)
         cons_1 = round((m1[0]*0.25 + m2[0]*0.15 + m3[0]*0.20 + m4[0]*0.15 + m5[0]*0.25), 1)
         cons_x = round((m1[1]*0.25 + m2[1]*0.15 + m3[1]*0.20 + m4[1]*0.15 + m5[1]*0.25), 1)
         cons_2 = round((m1[2]*0.25 + m2[2]*0.15 + m3[2]*0.20 + m4[2]*0.15 + m5[2]*0.25), 1)
 
-        # AJUSTE 1: Córners suavizados y más realistas (promedio liga ~10)
         tiros_l, tiros_v = s_loc.get('Tiros_Promedio', 12.0), s_vis.get('Tiros_Promedio', 10.0)
         att_l, att_v = s_loc.get('AttPen_Promedio', 18.0), s_vis.get('AttPen_Promedio', 14.0)
         corners_total = round((tiros_l * 0.25) + (att_l * 0.08) + (tiros_v * 0.20) + (att_v * 0.06), 1)
@@ -256,7 +248,6 @@ if deporte == "⚽ Fútbol (Liga MX)":
                     pick_seguro = f"1X ({datos['Local']} o Empate)" if datos['Prob_1'] >= datos['Prob_2'] else f"X2 ({datos['Visita']} o Empate)"
                     st.markdown(f'<div class="safe-card"><h3>🛡️ PICK SEGURO (Bajo Riesgo)</h3><p><b>Recomendación:</b> {pick_seguro}</p><p><b>Probabilidad del Modelo:</b> ~{round(datos["Prob_1"]+datos["Prob_X"] if datos["Prob_1"]>=datos["Prob_2"] else datos["Prob_2"]+datos["Prob_X"], 1)}%</p><hr><small>Línea respaldada por el consenso general del meta-modelo.</small></div>', unsafe_allow_html=True)
                 with col_p2:
-                    # AJUSTE 3: Filtro mínimo de Edge (+5.0%)
                     if mejor_edge >= 5.0:
                         st.markdown(f'<div class="value-card"><h3>💎 PICK DE VALOR (Value Bet)</h3><p><b>Recomendación:</b> {mejor_val_nombre} (Momio: {m_amer_val:+} / {m_dec_val})</p><p><b>Prob. Modelo:</b> {m_prob_val}% &nbsp;|&nbsp; <b>Prob. Casino:</b> {prob_implicada(m_dec_val)}%</p><hr><p style="color:#34d399; font-weight:bold; margin:0;">🔥 VENTAJA MATEMÁTICA (EDGE): +{mejor_edge}%</p></div>', unsafe_allow_html=True)
                     else:
@@ -485,7 +476,7 @@ elif deporte == "⚾ Béisbol (MLB)":
         st.info(f"💡 No se detectó cartelera en la API para el {fecha_sel.strftime('%d/%m/%Y')} o la conexión falló.")
         partidos_mlb = ["New York Yankees vs Los Angeles Dodgers", "Philadelphia Phillies vs Baltimore Orioles"]
 
-    # --- MOTOR MATEMÁTICO MLB 360° (CON AJUSTE DE RACHA) ---
+    # --- MOTOR MATEMÁTICO MLB 360° ---
     def motor_mlb_360(local, visita, df, era_sp_l=None, era_sp_v=None, linea_ou=8.5):
         local_clean = local.split(" (Juego")[0].strip()
         visita_clean = visita.split(" (Juego")[0].strip()
@@ -518,7 +509,6 @@ elif deporte == "⚾ Béisbol (MLB)":
         else:
             p1, p2 = 50.0, 50.0
             
-        # Restauración de variables para la Interfaz Gráfica
         er_l = round((def_v * 1.05) * (p1/50.0), 1)
         er_v = round((def_l * 1.05) * (p2/50.0), 1)
         
@@ -595,44 +585,89 @@ elif deporte == "⚾ Béisbol (MLB)":
             with cm_o: m_mlbo = st.number_input(f"Over {linea_casino} Carreras", value=-110, step=5, key="mlbo")
             with cm_nrfi: m_mlb_nrfi = st.number_input("NRFI (No Run 1st Inning)", value=-120, step=5, key="mlb_nrfi")
             
+            # --- NUEVA SECCIÓN DE PLAYER PROPS (STRIKEOUTS) ---
+            st.markdown("---")
+            st.markdown("### 🔥 Player Props: Ponches (Strikeouts)")
+            col_k1, col_k2 = st.columns(2)
+            with col_k1:
+                st.markdown(f"<div class='method-box'><b>🏠 {loc_nombre} (Local)</b>", unsafe_allow_html=True)
+                k9_loc = st.number_input("K/9 (Ponches por 9 IP)", value=9.0, step=0.5, key="k9_l")
+                lin_k_loc = st.number_input("Línea de Ponches (Casino)", value=5.5, step=0.5, key="lin_k_l")
+                c_ok_l, c_uk_l = st.columns(2)
+                with c_ok_l: m_ok_loc = st.number_input(f"Over {lin_k_loc}", value=-110, step=5, key="mo_k_l")
+                with c_uk_l: m_uk_loc = st.number_input(f"Under {lin_k_loc}", value=-110, step=5, key="mu_k_l")
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            with col_k2:
+                st.markdown(f"<div class='method-box'><b>✈️ {vis_nombre} (Visita)</b>", unsafe_allow_html=True)
+                k9_vis = st.number_input("K/9 (Ponches por 9 IP)", value=9.0, step=0.5, key="k9_v")
+                lin_k_vis = st.number_input("Línea de Ponches (Casino)", value=5.5, step=0.5, key="lin_k_v")
+                c_ok_v, c_uk_v = st.columns(2)
+                with c_ok_v: m_ok_vis = st.number_input(f"Over {lin_k_vis}", value=-110, step=5, key="mo_k_v")
+                with c_uk_v: m_uk_vis = st.number_input(f"Under {lin_k_vis}", value=-110, step=5, key="mu_k_v")
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            # Cálculos de Edge Principales
             edge_1 = round(dm['Prob_1'] - prob_implicada(americano_a_decimal(m_mlb1)), 1)
             edge_2 = round(dm['Prob_2'] - prob_implicada(americano_a_decimal(m_mlb2)), 1)
             edge_o = round(dm['Over_Line'] - prob_implicada(americano_a_decimal(m_mlbo)), 1)
             edge_nr = round(dm['NRFI'] - prob_implicada(americano_a_decimal(m_mlb_nrfi)), 1)
             
+            # Cálculos de Edge para Ponches
+            proj_kl, over_kl, under_kl = proyeccion_ponches(sp_loc_input, k9_loc, lin_k_loc)
+            proj_kv, over_kv, under_kv = proyeccion_ponches(sp_vis_input, k9_vis, lin_k_vis)
+            
+            edge_ok_l = round(over_kl - prob_implicada(americano_a_decimal(m_ok_loc)), 1)
+            edge_uk_l = round(under_kl - prob_implicada(americano_a_decimal(m_uk_loc)), 1)
+            edge_ok_v = round(over_kv - prob_implicada(americano_a_decimal(m_ok_vis)), 1)
+            edge_uk_v = round(under_kv - prob_implicada(americano_a_decimal(m_uk_vis)), 1)
+
+            # Encontrar el mejor valor general (Principales + Props)
             mejor_edge_val, mejor_nom, mejor_mom = max([
                 (edge_1, f"Victoria {dm['Local']}", m_mlb1),
                 (edge_2, f"Victoria {dm['Visita']}", m_mlb2),
                 (edge_o, f"Over {linea_casino} Carreras", m_mlbo),
                 (edge_nr, "NRFI (0 Carreras en 1ª Entrada)", m_mlb_nrfi)
             ], key=lambda x: x[0])
+
+            mejor_edge_props, mejor_nom_props, mejor_mom_props = max([
+                (edge_ok_l, f"Over {lin_k_loc} Ponches ({dm['Local']})", m_ok_loc),
+                (edge_uk_l, f"Under {lin_k_loc} Ponches ({dm['Local']})", m_uk_loc),
+                (edge_ok_v, f"Over {lin_k_vis} Ponches ({dm['Visita']})", m_ok_vis),
+                (edge_uk_v, f"Under {lin_k_vis} Ponches ({dm['Visita']})", m_uk_vis)
+            ], key=lambda x: x[0])
             
             st.markdown("---")
             st.markdown("### 🎯 Matriz de Picks MLB")
-            col_b1, col_b2 = st.columns(2)
+            col_b1, col_b2, col_bprops = st.columns(3)
             with col_b1:
                 fav_mlb = dm['Local'] if dm['Prob_1'] >= dm['Prob_2'] else dm['Visita']
-                st.markdown(f'<div class="safe-card"><h3>🛡️ Pick Seguro MLB</h3><p><b>Moneyline: {fav_mlb}</b></p><p><b>Probabilidad del Modelo:</b> {max(dm["Prob_1"], dm["Prob_2"])}%</p><hr><small>Apuesta directa al ganador protegida por Esperanza Pitagórica y rotación.</small></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="safe-card"><h3>🛡️ Pick Seguro</h3><p><b>Moneyline: {fav_mlb}</b></p><p><b>Probabilidad:</b> {max(dm["Prob_1"], dm["Prob_2"])}%</p><hr><small>Apuesta directa protegida por Esperanza Pitagórica.</small></div>', unsafe_allow_html=True)
             with col_b2:
                 if mejor_edge_val >= 3.0:
-                    st.markdown(f'<div class="value-card"><h3>💎 Pick de Valor (Edge Detectado)</h3><p><b>{mejor_nom}</b> (Momio: {mejor_mom:+})</p><p><b>Ventaja Matemática sobre Casino:</b> +{mejor_edge_val}%</p><hr><small>Línea con la mayor ineficiencia matemática detectada.</small></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="value-card"><h3>💎 Pick Valor Global</h3><p><b>{mejor_nom}</b> ({mejor_mom:+})</p><p><b>EDGE MATEMÁTICO:</b> +{mejor_edge_val}%</p><hr><small>Mayor ineficiencia detectada en el mercado principal.</small></div>', unsafe_allow_html=True)
                 else:
-                    st.markdown(f'<div class="value-card" style="border-color: #eab308; background: #422006;"><h3>⚠️ SIN VALUE BET CLARO</h3><p>El margen más alto es <b>{mejor_nom}</b> con solo +{mejor_edge_val}%.</p><hr><small style="color: #fde047;">Las líneas de MLB están muy apretadas. Recomendamos saltar este juego para apuestas directas.</small></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="value-card" style="border-color: #eab308; background: #422006;"><h3>⚠️ NO VALUE BET</h3><p>El margen es <b>{mejor_nom}</b> con solo +{mejor_edge_val}%.</p><hr><small style="color: #fde047;">Líneas muy apretadas. Sáltate el mercado principal.</small></div>', unsafe_allow_html=True)
+            with col_bprops:
+                if mejor_edge_props >= 3.0:
+                    st.markdown(f'<div class="risk-card" style="border-left-color:#a855f7;"><h3>🎯 Value Pick: Ponches</h3><p><b>{mejor_nom_props}</b> ({mejor_mom_props:+})</p><p><b>EDGE MATEMÁTICO:</b> +{mejor_edge_props}%</p><hr><small>Proyección de K cruzada con estimación de Innings.</small></div>', unsafe_allow_html=True)
+                else:
+                    st.markdown(f'<div class="risk-card" style="border-color: #64748b; background: #1e293b;"><h3>🎯 Ponches (Apretado)</h3><p>Líneas de strikeout muy justas.</p><hr><small>El mayor margen es {mejor_nom_props} (+{mejor_edge_props}%).</small></div>', unsafe_allow_html=True)
                 
             col_b3, col_b4 = st.columns(2)
             with col_b3:
-                st.markdown(f'<div class="risk-card"><h3>🔥 Pick Risk (Run Line -1.5)</h3><p><b>{fav_mlb} Run Line -1.5</b> (Gana por 2+ carreras)</p><p><b>Probabilidad Proyectada:</b> ~{round(max(dm["Prob_1"], dm["Prob_2"])*0.62, 1)}% &nbsp;|&nbsp; <b>Momio Est:</b> +140</p><hr><small>Para maximizar cuotas cuando tu pitcher abridor tiene dominio absoluto.</small></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="risk-card"><h3>🔥 Pick Risk (Run Line -1.5)</h3><p><b>{fav_mlb} Run Line -1.5</b> (Gana por 2+ carreras)</p><p><b>Prob. Proyectada:</b> ~{round(max(dm["Prob_1"], dm["Prob_2"])*0.62, 1)}%</p><hr><small>Para maximizar cuotas cuando hay dominio de pitcheo.</small></div>', unsafe_allow_html=True)
             with col_b4:
-                st.markdown(f'<div class="parlay-card"><h3>⚾ Prop del Inning 1 (Impacto Abridor)</h3><p><b>Recomendación:</b> {"NRFI (No Run 1st Inning)" if dm["NRFI"] >= 52 else "YRFI (Yes Run 1st Inning)"}</p><p><b>Probabilidad:</b> {dm["NRFI"] if dm["NRFI"]>=52 else round(100-dm["NRFI"],1)}% &nbsp;|&nbsp; <b>Línea:</b> 0.5 Carreras 1er Rollo</p><hr><small>Cálculo pesado en los ERAs introducidos para el 1er inning.</small></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="parlay-card"><h3>⚾ Prop del Inning 1 (Impacto Abridor)</h3><p><b>Recomendación:</b> {"NRFI (No Run 1st Inning)" if dm["NRFI"] >= 52 else "YRFI (Yes Run 1st Inning)"}</p><p><b>Probabilidad:</b> {dm["NRFI"] if dm["NRFI"]>=52 else round(100-dm["NRFI"],1)}% &nbsp;|&nbsp; <b>Línea:</b> 0.5 Carreras</p><hr><small>Cálculo pesado en los ERAs para el primer rollo.</small></div>', unsafe_allow_html=True)
 
     with tab_mlb2:
         st.subheader("🧪 Laboratorio Multi-Algoritmo Béisbol")
         if dm:
             st.markdown(f'<div class="meta-model-card" style="border-color:#ef4444;"><h3 style="color:#fecaca; margin:0;">👑 CONSENSO MONEYBALL MLB</h3><h1 style="color:#ffffff; margin:10px 0;">{dm["Local"]}: {dm["Prob_1"]}% &nbsp;|&nbsp; {dm["Visita"]}: {dm["Prob_2"]}%</h1><p style="color:#fca5a5; margin:0;">En béisbol no existen empates; el 100% de la probabilidad se divide entre ambos bandos.</p></div>', unsafe_allow_html=True)
             t_mlb_comp = {
-                "Metodología Cuantitativa": ["1️⃣ Distribución Poisson (Carreras + Abridor)", "2️⃣ Esperanza Pitagórica (Bill James Formula)", "3️⃣ Simulación Monte Carlo (5,000 Juegos)"],
-                f"🏠 {dm['Local']}": [f"{dm['M1'][0]}%", f"{dm['M2'][0]}%", f"{dm['M3'][0]}%"],
-                f"✈️ {dm['Visita']}": [f"{dm['M1'][1]}%", f"{dm['M2'][1]}%", f"{dm['M3'][1]}%"]
+                "Metodología Cuantitativa": ["1️⃣ Distribución Poisson (Carreras + Abridor)", "2️⃣ Esperanza Pitagórica (Bill James Formula)", "3️⃣ Simulación Monte Carlo (5,000 Juegos)", "4️⃣ Proyección Ponches (SP)"],
+                f"🏠 {dm['Local']}": [f"{dm['M1'][0]}%", f"{dm['M2'][0]}%", f"{dm['M3'][0]}%", f"~{proj_kl} Strikeouts"],
+                f"✈️ {dm['Visita']}": [f"{dm['M1'][1]}%", f"{dm['M2'][1]}%", f"{dm['M3'][1]}%", f"~{proj_kv} Strikeouts"]
             }
             st.dataframe(pd.DataFrame(t_mlb_comp), use_container_width=True)
 
