@@ -475,7 +475,7 @@ elif deporte == "⚾ Béisbol (MLB)":
         except Exception: pass
         return None
 
-    fecha_default = date(2026, 7, 20)
+    fecha_default = date(2026, 8, 8)
     col_f1, col_f2 = st.columns([1, 3])
     with col_f1:
         fecha_sel = st.date_input("📅 Selecciona Jornada MLB:", value=fecha_default, min_value=date(2026, 3, 20), max_value=date(2026, 11, 1))
