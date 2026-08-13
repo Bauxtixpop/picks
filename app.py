@@ -378,7 +378,7 @@ elif deporte == "⚾ Béisbol (MLB)":
         except Exception: pass
         return None
 
-    fecha_default = date(2026, 8, 8)
+    fecha_default = date.today()
     col_f1, col_f2 = st.columns([1, 3])
     with col_f1:
         fecha_sel = st.date_input("📅 Selecciona Jornada MLB:", value=fecha_default, min_value=date(2026, 3, 20), max_value=date(2026, 11, 1))
@@ -430,10 +430,9 @@ elif deporte == "⚾ Béisbol (MLB)":
         over_line = round(50.0 + ((carreras_totales - linea_ou) * 5.0), 1)
         over_line = max(10.0, min(90.0, over_line))
 
-        # === NUEVO: CÁLCULO F5 (PRIMERAS 5 ENTRADAS) ===
-        # Aislamos el ERA del abridor y lo proyectamos a 5 entradas
-        lam_f5_l = (era_sp_v / 9.0) * 5.0 * 1.05 # Local batea contra el SP Visita
-        lam_f5_v = (era_sp_l / 9.0) * 5.0 * 0.95 # Visita batea contra el SP Local
+        # === CÁLCULO F5 (PRIMERAS 5 ENTRADAS) ===
+        lam_f5_l = (era_sp_v / 9.0) * 5.0 * 1.05
+        lam_f5_v = (era_sp_l / 9.0) * 5.0 * 0.95 
 
         p1_f5, px_f5, p2_f5 = 0.0, 0.0, 0.0
         for gl in range(10):
@@ -462,7 +461,7 @@ elif deporte == "⚾ Béisbol (MLB)":
 
     tab_mlb1, tab_mlb2, tab_mlb3, tab_mlb4 = st.tabs([
         "🏟️ Match Center (MLB)", "🧪 Laboratorio Béisbol", 
-        "⚡ Parlays & Moonshot MLB", "📊 Tabla Pitagórica MLB"
+        "⚡ Parlays & Ranking MLB", "📊 Tabla Pitagórica MLB"
     ])
 
     with tab_mlb1:
@@ -523,18 +522,14 @@ elif deporte == "⚾ Béisbol (MLB)":
                 with c_uk_v: m_uk_vis = st.number_input(f"Under {lin_k_vis}", value=-110, step=5, key="mu_k_v")
                 st.markdown("</div>", unsafe_allow_html=True)
 
-            # Cálculos de Edge Globales
+            # Cálculos de Edge
             edge_1 = round(dm['Prob_1'] - prob_implicada(americano_a_decimal(m_mlb1)), 1)
             edge_2 = round(dm['Prob_2'] - prob_implicada(americano_a_decimal(m_mlb2)), 1)
             edge_o = round(dm['Over_Line'] - prob_implicada(americano_a_decimal(m_mlbo)), 1)
             edge_nr = round(dm['NRFI'] - prob_implicada(americano_a_decimal(m_mlb_nrfi)), 1)
-            
-            # Cálculos de Edge F5
             edge_f5_1 = round(dm['Prob_F5_1'] - prob_implicada(americano_a_decimal(m_f5_1)), 1)
             edge_f5_x = round(dm['Prob_F5_X'] - prob_implicada(americano_a_decimal(m_f5_x)), 1)
             edge_f5_2 = round(dm['Prob_F5_2'] - prob_implicada(americano_a_decimal(m_f5_2)), 1)
-
-            # Cálculos de Edge Ponches
             proj_kl, over_kl, under_kl = proyeccion_ponches(sp_loc_input, k9_loc, lin_k_loc)
             proj_kv, over_kv, under_kv = proyeccion_ponches(sp_vis_input, k9_vis, lin_k_vis)
             edge_ok_l = round(over_kl - prob_implicada(americano_a_decimal(m_ok_loc)), 1)
@@ -542,7 +537,6 @@ elif deporte == "⚾ Béisbol (MLB)":
             edge_ok_v = round(over_kv - prob_implicada(americano_a_decimal(m_ok_vis)), 1)
             edge_uk_v = round(under_kv - prob_implicada(americano_a_decimal(m_uk_vis)), 1)
 
-            # Maximizadores
             mejor_edge_val, mejor_nom, mejor_mom = max([
                 (edge_1, f"Victoria {dm['Local']}", m_mlb1),
                 (edge_2, f"Victoria {dm['Visita']}", m_mlb2),
@@ -602,11 +596,12 @@ elif deporte == "⚾ Béisbol (MLB)":
             st.dataframe(pd.DataFrame(t_mlb_comp), use_container_width=True)
 
     with tab_mlb3:
-        st.subheader("⚡ Parlays de Béisbol & Moonshot MLB")
+        st.subheader("⚡ Parlays & Ranking MLB")
         data_j_mlb = [motor_mlb_360(p.split(" vs ")[0].strip(), p.split(" vs ")[1].strip(), df_mlb) for p in partidos_mlb]
         data_j_mlb = [x for x in data_j_mlb if x is not None]
         
         if data_j_mlb:
+            # === FILA 1: PARLAYS CLÁSICOS ===
             cp_m1, cp_m2 = st.columns(2)
             with cp_m1:
                 st.markdown("<h3 style='color:#60a5fa;'>🛡️ Parlay Seguro MLB</h3>", unsafe_allow_html=True)
@@ -629,38 +624,62 @@ elif deporte == "⚾ Béisbol (MLB)":
                 st.markdown(f'<div class="value-card">{p_val_m}<hr><h4>🎟️ Momio Est: {mom_val_mlb:+} ({round(c_val_m, 2)})</h4><small>Combinación de props de pitcheo y bateo.</small></div>', unsafe_allow_html=True)
 
             st.markdown("---")
-            st.markdown("<h2 style='color:#ec4899; text-align:center;'>🚀 EL PARLAY SOÑADOR MLB (MOONSHOT BÉISBOL)</h2>", unsafe_allow_html=True)
+            
+            # === FILA 2: NUEVO RANKING DE MONEYLINE ===
+            st.markdown("<h3 style='color:#facc15;'>🏆 Ranking Definitivo de Moneyline (Mayor a Menor Seguridad)</h3>", unsafe_allow_html=True)
+            st.write("Lista con los equipos de la jornada ordenados por su probabilidad matemática pura de ganar hoy. Ideal para armar tus propios boletos o evitar sorpresas.")
+            
+            ranking_ml = sorted(data_j_mlb, key=lambda x: max(x['Prob_1'], x['Prob_2']), reverse=True)
+            rank_cols = st.columns(3)
+            for idx, x in enumerate(ranking_ml):
+                fav = x['Local'] if x['Prob_1'] > x['Prob_2'] else x['Visita']
+                prob = max(x['Prob_1'], x['Prob_2'])
+                col_idx = idx % 3
+                with rank_cols[col_idx]:
+                    st.markdown(f"<div style='background:#1e293b; padding:12px; border-radius:8px; margin-bottom:10px; border-left:4px solid #facc15;'><b>{idx+1}. {fav}</b><br><small style='color:#cbd5e1;'>Probabilidad Matemática: <b>{prob}%</b></small></div>", unsafe_allow_html=True)
+
+            st.markdown("---")
+            
+            # === FILA 3: LA BOMBA SEGURA INTELIGENTE (REEMPLAZA AL MOONSHOT) ===
+            st.markdown("<h2 style='color:#ec4899; text-align:center;'>🚀 LA BOMBA SEGURA (PARLAY INTELIGENTE)</h2>", unsafe_allow_html=True)
+            st.write("En lugar de combinaciones al azar, este boleto escanea toda la cartelera y fusiona exclusivamente los 5 picks con la **mayor probabilidad y lógica estadística**. Una ganancia jugosa, pero con riesgo fríamente calculado.")
+            
             picks_mlb_moon, cuota_mlb_moon = "", 1.0
-            for x in data_j_mlb[:5]:
-                if x['Over_Line'] > 52:
-                    p_moon = f"Over {x['Linea_OU']} Carreras + YRFI (Carrera en 1ª Entrada)"
-                    c_moon = 2.40
-                elif x['Prob_1'] > 56:
-                    p_moon = f"{x['Local']} Run Line -1.5 (Gana por paliza)"
-                    c_moon = 2.25
-                elif x['Prob_2'] > 55:
-                    p_moon = f"{x['Visita']} Run Line -1.5 (Gana por paliza)"
-                    c_moon = 2.35
-                else:
-                    p_moon = f"NRFI + Under {x['Linea_OU']} Carreras (Duelo de Pitcheo)"
-                    c_moon = 2.15
-                picks_mlb_moon += f"✨ <b>{x['Local']} vs {x['Visita']}:</b> {p_moon} <span style='color:#fbcfe8;'>[Cuota: {c_moon}]</span><br>"
-                cuota_mlb_moon *= c_moon
+            
+            def obtener_mejor_pick(juego):
+                opciones = [
+                    (juego['Prob_1'], f"Victoria {juego['Local']} (Moneyline)", 1.55),
+                    (juego['Prob_2'], f"Victoria {juego['Visita']} (Moneyline)", 1.55),
+                    (juego['NRFI'], "NRFI (0 Carreras en 1ª Entrada)", 1.85),
+                    (100 - juego['NRFI'], "YRFI (Sí hay Carrera en 1ª Entrada)", 1.85),
+                    (juego['Over_Line'], f"Over {juego['Linea_OU']} Carreras", 1.90),
+                    (100 - juego['Over_Line'], f"Under {juego['Linea_OU']} Carreras", 1.90)
+                ]
+                # Retorna la opción con la probabilidad más alta de ese partido específico
+                return max(opciones, key=lambda item: item[0])
+                
+            juegos_bomba = sorted(data_j_mlb, key=lambda x: obtener_mejor_pick(x)[0], reverse=True)
+            
+            for x in juegos_bomba[:5]: # Top 5 jugadas más seguras de TODO el día
+                mejor_prob, nombre_pick, cuota_est = obtener_mejor_pick(x)
+                picks_mlb_moon += f"✨ <b>{x['Local']} vs {x['Visita']}:</b> {nombre_pick} <span style='color:#fbcfe8;'>({mejor_prob}% Probabilidad)</span><br>"
+                cuota_mlb_moon *= cuota_est
                 
             mom_moon_mlb = int((cuota_mlb_moon - 1.0) * 100) if cuota_mlb_moon >= 2.0 else int(-100 / (cuota_mlb_moon - 1.0))
+            
             st.markdown(f"""
             <div class="dream-card">
-                <h3 style="color:#fdf2f8; margin-top:0;">🌌 BOLETO MOONSHOT MLB - BOMBAS DEL DIAMANTE</h3>
+                <h3 style="color:#fdf2f8; margin-top:0;">🌌 BOLETO DE LA BOMBA INTELIGENTE MLB</h3>
                 <div style="font-size: 1.05em; line-height: 1.6; margin: 15px 0;">{picks_mlb_moon}</div>
                 <hr style="border-color: #db2777;">
                 <div style="display: flex; justify-content: space-around; align-items: center; flex-wrap: wrap;">
                     <div>
                         <h2 style="color: #ffffff; margin: 0;">🎟️ MOMIO EST: {mom_moon_mlb:+}</h2>
-                        <span style="color: #fbcfe8;">Cuota Combinada: <b>{round(cuota_mlb_moon, 2)}</b></span>
+                        <span style="color: #fbcfe8;">Cuota Decimal Multiplicada: <b>{round(cuota_mlb_moon, 2)}</b></span>
                     </div>
                     <div style="background: rgba(0,0,0,0.3); padding: 10px 20px; border-radius: 8px; border: 1px solid #ec4899; margin-top: 10px;">
                         <span style="color: #f43f5e; font-weight: bold;">⚠️ GESTIÓN DE RIESGO:</span><br>
-                        <small style="color: #fce7f3;">Stake sugerido: <b>0.25u</b>. Si le metes $100 MXN, ¡el retorno proyectado es de <b>${round(cuota_mlb_moon * 100):,} MXN</b>!</small>
+                        <small style="color: #fce7f3;">Stake sugerido: <b>0.5u</b>. Jugadas validadas estadísticamente, pero al combinarse generan multiplicadores masivos.<br>Si le metes $100 MXN, el retorno proyectado es de <b>${round(cuota_mlb_moon * 100):,} MXN</b>.</small>
                     </div>
                 </div>
             </div>
