@@ -640,27 +640,31 @@ elif deporte == "⚾ Béisbol (MLB)":
 
             st.markdown("---")
             
-            # === FILA 3: LA BOMBA SEGURA INTELIGENTE (REEMPLAZA AL MOONSHOT) ===
-            st.markdown("<h2 style='color:#ec4899; text-align:center;'>🚀 LA BOMBA SEGURA (PARLAY INTELIGENTE)</h2>", unsafe_allow_html=True)
-            st.write("En lugar de combinaciones al azar, este boleto escanea toda la cartelera y fusiona exclusivamente los 5 picks con la **mayor probabilidad y lógica estadística**. Una ganancia jugosa, pero con riesgo fríamente calculado.")
+            # === FILA 3: LA BOMBA SEGURA INTELIGENTE OMNI-MERCADO ===
+            st.markdown("<h2 style='color:#ec4899; text-align:center;'>🚀 LA BOMBA SEGURA (PARLAY INTELIGENTE OMNI-MERCADO)</h2>", unsafe_allow_html=True)
+            st.write("Este boleto escanea todos los juegos de la cartelera de manera general y compara Moneyline, Primeras 5 Entradas (F5), Altas/Bajas y NRFI/YRFI. Selecciona exclusivamente los 5 picks con la **probabilidad matemática absoluta más alta** sin importar a qué mercado pertenezcan.")
             
             picks_mlb_moon, cuota_mlb_moon = "", 1.0
             
             def obtener_mejor_pick(juego):
+                # El escáner ahora incluye F5 junto con ML y Props de Totales
                 opciones = [
                     (juego['Prob_1'], f"Victoria {juego['Local']} (Moneyline)", 1.55),
                     (juego['Prob_2'], f"Victoria {juego['Visita']} (Moneyline)", 1.55),
+                    (juego['Prob_F5_1'], f"Victoria {juego['Local']} (Primeras 5 - F5)", 1.60),
+                    (juego['Prob_F5_2'], f"Victoria {juego['Visita']} (Primeras 5 - F5)", 1.60),
                     (juego['NRFI'], "NRFI (0 Carreras en 1ª Entrada)", 1.85),
                     (100 - juego['NRFI'], "YRFI (Sí hay Carrera en 1ª Entrada)", 1.85),
                     (juego['Over_Line'], f"Over {juego['Linea_OU']} Carreras", 1.90),
                     (100 - juego['Over_Line'], f"Under {juego['Linea_OU']} Carreras", 1.90)
                 ]
-                # Retorna la opción con la probabilidad más alta de ese partido específico
+                # Busca y retorna la opción que tiene el porcentaje de probabilidad más alto
                 return max(opciones, key=lambda item: item[0])
                 
+            # Ordenamos la cartelera entera de acuerdo al pick con más probabilidad de suceder
             juegos_bomba = sorted(data_j_mlb, key=lambda x: obtener_mejor_pick(x)[0], reverse=True)
             
-            for x in juegos_bomba[:5]: # Top 5 jugadas más seguras de TODO el día
+            for x in juegos_bomba[:5]: # Extrae solo el TOP 5 más seguro
                 mejor_prob, nombre_pick, cuota_est = obtener_mejor_pick(x)
                 picks_mlb_moon += f"✨ <b>{x['Local']} vs {x['Visita']}:</b> {nombre_pick} <span style='color:#fbcfe8;'>({mejor_prob}% Probabilidad)</span><br>"
                 cuota_mlb_moon *= cuota_est
@@ -669,7 +673,7 @@ elif deporte == "⚾ Béisbol (MLB)":
             
             st.markdown(f"""
             <div class="dream-card">
-                <h3 style="color:#fdf2f8; margin-top:0;">🌌 BOLETO DE LA BOMBA INTELIGENTE MLB</h3>
+                <h3 style="color:#fdf2f8; margin-top:0;">🌌 BOLETO DE LA BOMBA OMNI-MERCADO</h3>
                 <div style="font-size: 1.05em; line-height: 1.6; margin: 15px 0;">{picks_mlb_moon}</div>
                 <hr style="border-color: #db2777;">
                 <div style="display: flex; justify-content: space-around; align-items: center; flex-wrap: wrap;">
@@ -679,7 +683,7 @@ elif deporte == "⚾ Béisbol (MLB)":
                     </div>
                     <div style="background: rgba(0,0,0,0.3); padding: 10px 20px; border-radius: 8px; border: 1px solid #ec4899; margin-top: 10px;">
                         <span style="color: #f43f5e; font-weight: bold;">⚠️ GESTIÓN DE RIESGO:</span><br>
-                        <small style="color: #fce7f3;">Stake sugerido: <b>0.5u</b>. Jugadas validadas estadísticamente, pero al combinarse generan multiplicadores masivos.<br>Si le metes $100 MXN, el retorno proyectado es de <b>${round(cuota_mlb_moon * 100):,} MXN</b>.</small>
+                        <small style="color: #fce7f3;">Stake sugerido: <b>0.5u</b>. Al agarrar la probabilidad pura más alta en todos los mercados, el algoritmo maximiza el cobro con riesgo fríamente calculado.<br>Si le metes $100 MXN, el retorno proyectado es de <b>${round(cuota_mlb_moon * 100):,} MXN</b>.</small>
                     </div>
                 </div>
             </div>
