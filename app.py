@@ -22,6 +22,7 @@ st.markdown("""
     .match-header { background: linear-gradient(90deg, #1e3a8a 0%, #0f172a 100%); padding: 20px; border-radius: 12px; text-align: center; border: 1px solid #3b82f6; margin-bottom: 20px; }
     .match-header-mlb { background: linear-gradient(90deg, #7f1d1d 0%, #172554 100%); padding: 20px; border-radius: 12px; text-align: center; border: 1px solid #ef4444; margin-bottom: 20px; }
     .pitcher-box { background: #0f172a; padding: 15px; border-radius: 10px; border: 1px dashed #38bdf8; margin-bottom: 20px; }
+    .vegas-alert-box { background: #450a0a; padding: 15px; border-radius: 10px; border-left: 5px solid #ef4444; margin-bottom: 20px; }
     .safe-card { background: #1e3a8a; padding: 15px; border-radius: 10px; border-left: 5px solid #60a5fa; margin-bottom: 10px; }
     .value-card { background: #064e3b; padding: 15px; border-radius: 10px; border-left: 5px solid #10b981; margin-bottom: 10px; }
     .risk-card { background: #7c2d12; padding: 15px; border-radius: 10px; border-left: 5px solid #f97316; margin-bottom: 10px; }
@@ -347,9 +348,11 @@ elif deporte == "⚾ Béisbol (MLB)":
     with st.spinner("⚾ Conectando a los servidores oficiales de MLB..."):
         df_mlb = cargar_estadisticas_mlb()
 
+    # --- NUEVA CONEXIÓN PARA EXTRAER UMPIRES Y STATUS DE ALINEACIÓN ---
     @st.cache_data(ttl=3600*3)
-    def obtener_partidos_mlb(fecha_str):
-        url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={fecha_str}"
+    def obtener_partidos_mlb_detallado(fecha_str):
+        # El parámetro hydrate=officials trae a los umpires programados si ya fueron anunciados
+        url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={fecha_str}&hydrate=officials"
         try:
             res = requests.get(url, timeout=8)
             if res.status_code == 200:
@@ -361,35 +364,52 @@ elif deporte == "⚾ Béisbol (MLB)":
                     for game in date_info.get("games", []):
                         away = game["teams"]["away"]["team"]["name"]
                         home = game["teams"]["home"]["team"]["name"]
+                        status = game["status"]["detailedState"] # Saber si ya inició, etc.
                         nombre_base = f"{home} vs {away}"
+                        
+                        # Buscar al Umpire de Home si existe en el JSON
+                        umpire_home = "No anunciado aún"
+                        for official in game.get("officials", []):
+                            if official.get("officialType") == "Home Plate":
+                                umpire_home = official.get("official", {}).get("fullName", "Desconocido")
+                                break
                         
                         if nombre_base in conteo_duelos:
                             conteo_duelos[nombre_base] += 1
                             nombre_final = f"{nombre_base} (Juego {conteo_duelos[nombre_base]})"
                             if conteo_duelos[nombre_base] == 2:
-                                idx_primero = juegos.index(nombre_base)
-                                juegos[idx_primero] = f"{nombre_base} (Juego 1)"
+                                idx_primero = next(i for i, v in enumerate(juegos) if v["nombre"].startswith(nombre_base))
+                                juegos[idx_primero]["nombre"] = f"{nombre_base} (Juego 1)"
                         else:
                             conteo_duelos[nombre_base] = 1
                             nombre_final = nombre_base
                             
-                        juegos.append(nombre_final)
+                        juegos.append({
+                            "nombre": nombre_final,
+                            "home": home,
+                            "away": away,
+                            "umpire": umpire_home,
+                            "status": status
+                        })
                 if juegos: return juegos
         except Exception: pass
-        return None
+        return []
 
     fecha_default = date.today()
     col_f1, col_f2 = st.columns([1, 3])
     with col_f1:
         fecha_sel = st.date_input("📅 Selecciona Jornada MLB:", value=fecha_default, min_value=date(2026, 3, 20), max_value=date(2026, 11, 1))
     
-    partidos_mlb = obtener_partidos_mlb(fecha_sel.strftime("%Y-%m-%d"))
-    if not partidos_mlb:
+    info_juegos = obtener_partidos_mlb_detallado(fecha_sel.strftime("%Y-%m-%d"))
+    nombres_partidos = [j["nombre"] for j in info_juegos] if info_juegos else []
+    
+    if not nombres_partidos:
         st.info(f"💡 No se detectó cartelera en la API para el {fecha_sel.strftime('%d/%m/%Y')} o la conexión falló.")
-        partidos_mlb = ["New York Yankees vs Los Angeles Dodgers", "Philadelphia Phillies vs Baltimore Orioles"]
+        nombres_partidos = ["New York Yankees vs Los Angeles Dodgers", "Philadelphia Phillies vs Baltimore Orioles"]
+        info_juegos = [{"nombre": n, "umpire": "Desconocido", "status": "Scheduled"} for n in nombres_partidos]
 
-    # --- MOTOR MLB MODIFICADO CON FILTROS PROFESIONALES ---
-    def motor_mlb_360(local, visita, df, era_sp_l=None, era_sp_v=None, linea_ou=8.5, fatiga_l="Normal", fatiga_v="Normal", clima="Neutral"):
+    # --- MOTOR MLB CON AJUSTE "DINERO INTELIGENTE VEGAS" ---
+    def motor_mlb_360(local, visita, df, era_sp_l=None, era_sp_v=None, linea_ou=8.5, fatiga_l="Normal", fatiga_v="Normal", clima="Neutral", vegas_flag="Normal"):
         local_clean = local.split(" (Juego")[0].strip()
         visita_clean = visita.split(" (Juego")[0].strip()
         
@@ -402,7 +422,6 @@ elif deporte == "⚾ Béisbol (MLB)":
         if era_sp_l is None: era_sp_l = sl['ERA']
         if era_sp_v is None: era_sp_v = sv['ERA']
         
-        # 1. Filtro de Fatiga del Bullpen (Penalización a la efectividad)
         bullpen_era_l = sl['ERA'] + (0.75 if fatiga_l == "Fatigado" else -0.25 if fatiga_l == "Descansado" else 0)
         bullpen_era_v = sv['ERA'] + (0.75 if fatiga_v == "Fatigado" else -0.25 if fatiga_v == "Descansado" else 0)
         
@@ -418,6 +437,10 @@ elif deporte == "⚾ Béisbol (MLB)":
         prob_l = sl['Pitagorica'] + (def_v - def_l)*4.0 + ajuste_racha_l
         prob_v = sv['Pitagorica'] - (def_v - def_l)*4.0 + ajuste_racha_v
         
+        # Penalización Vegas: Si hay movimiento inverso contra un equipo, bajamos matemáticamente sus chances un 8%
+        if vegas_flag == "Contra Local": prob_l -= 8.0
+        elif vegas_flag == "Contra Visita": prob_v -= 8.0
+
         total = prob_l + prob_v
         if total > 0:
             p1 = round((prob_l/total)*100, 1)
@@ -428,13 +451,11 @@ elif deporte == "⚾ Béisbol (MLB)":
         er_l_base = (def_v * 1.05) * (p1/50.0)
         er_v_base = (def_l * 1.05) * (p2/50.0)
         
-        # 2. Filtro de Clima / Viento (Impacta directamente las carreras esperadas)
         mod_clima = 1.15 if clima == "Viento a favor (Over)" else 0.85 if clima == "Viento en contra (Under)" else 1.0
         er_l = round(er_l_base * mod_clima, 1)
         er_v = round(er_v_base * mod_clima, 1)
         
         nrfi = round(50.0 + ((8.0 - (era_sp_l + era_sp_v)) * 4.0), 1)
-        # El clima también afecta el NRFI (viento a favor baja la probabilidad de ceros)
         if clima == "Viento a favor (Over)": nrfi -= 4.0
         elif clima == "Viento en contra (Under)": nrfi += 4.0
         nrfi = max(10.0, min(90.0, nrfi)) 
@@ -443,7 +464,6 @@ elif deporte == "⚾ Béisbol (MLB)":
         over_line = round(50.0 + ((carreras_totales - linea_ou) * 5.0), 1)
         over_line = max(10.0, min(90.0, over_line))
 
-        # === CÁLCULO F5 (PRIMERAS 5 ENTRADAS) ===
         lam_f5_l = ((era_sp_v / 9.0) * 5.0 * 1.05) * mod_clima
         lam_f5_v = ((era_sp_l / 9.0) * 5.0 * 0.95) * mod_clima
 
@@ -460,6 +480,10 @@ elif deporte == "⚾ Béisbol (MLB)":
             p1_f5 = round((p1_f5/tot_f5)*100, 1)
             px_f5 = round((px_f5/tot_f5)*100, 1)
             p2_f5 = round((p2_f5/tot_f5)*100, 1)
+            
+        # Penalización F5 Vegas
+        if vegas_flag == "Contra Local": p1_f5 = max(5.0, p1_f5 - 8.0)
+        elif vegas_flag == "Contra Visita": p2_f5 = max(5.0, p2_f5 - 8.0)
         
         return {
             "Local": local_clean, "Visita": visita_clean,
@@ -478,12 +502,28 @@ elif deporte == "⚾ Béisbol (MLB)":
     ])
 
     with tab_mlb1:
-        part_mlb_sel = st.selectbox("⚾ Selecciona Juego MLB de la Cartelera:", partidos_mlb)
+        part_mlb_sel = st.selectbox("⚾ Selecciona Juego MLB de la Cartelera:", nombres_partidos)
+        
+        # Buscar la metadata del juego seleccionado en la lista extraída de la API
+        info_juego_actual = next((j for j in info_juegos if j["nombre"] == part_mlb_sel), None)
+        umpire_str = info_juego_actual["umpire"] if info_juego_actual else "Desconocido"
+        status_str = info_juego_actual["status"] if info_juego_actual else "Scheduled"
+        
         eqs_m = part_mlb_sel.split(" vs ")
         loc_nombre_full, vis_nombre_full = eqs_m[0].strip(), eqs_m[1].strip()
         loc_nombre = loc_nombre_full.split(" (Juego")[0].strip()
         vis_nombre = vis_nombre_full.split(" (Juego")[0].strip()
         
+        # MÓDULO DE INTELIGENCIA VEGAS
+        st.markdown(f"""
+        <div class="vegas-alert-box">
+            <h4 style="color:#fca5a5; margin-top:0;">🚨 ESCÁNER DE PELIGRO VEGAS (DATOS OFICIALES)</h4>
+            <b>Árbitro de Home (Umpire):</b> {umpire_str}<br>
+            <small style="color:#d1d5db;"><i>Tip Pro: Si no conoces al umpire, busca "{umpire_str} umpire stats" en Google. Si tiene zona chica, ten cuidado con los Unders de Ponches.</i></small><br><br>
+            <b>Estado del Juego/Lineups:</b> {status_str}
+        </div>
+        """, unsafe_allow_html=True)
+
         def_era_loc = df_mlb[df_mlb['Equipo'].str.contains(loc_nombre.split()[-1], case=False, na=False)]['ERA'].values if not df_mlb.empty else []
         def_era_vis = df_mlb[df_mlb['Equipo'].str.contains(vis_nombre.split()[-1], case=False, na=False)]['ERA'].values if not df_mlb.empty else []
         era_l_val = float(def_era_loc[0]) if len(def_era_loc) > 0 else 4.00
@@ -495,15 +535,16 @@ elif deporte == "⚾ Béisbol (MLB)":
         with col_sp2: sp_vis_input = st.number_input(f"🔥 ERA Pitcher - {vis_nombre}", value=era_v_val, min_value=0.50, max_value=10.00, step=0.10, key="sp_vis")
         with col_ou: linea_casino = st.number_input("🎯 Línea Altas/Bajas (O/U)", value=8.5, min_value=5.0, max_value=15.0, step=0.5, key="linea_ou_sel")
 
-        # --- SECCIÓN DE AJUSTES AVANZADOS (NUEVO) ---
-        with st.expander("🧠 Ajustes Avanzados (Filtros Profesionales Anti-Varianza)", expanded=False):
-            st.markdown("<small>Ajusta estas variables si la información reciente del equipo indica fatiga o si el clima del estadio es extremo.</small>", unsafe_allow_html=True)
-            col_adv1, col_adv2, col_adv3 = st.columns(3)
+        # --- SECCIÓN DE AJUSTES AVANZADOS VEGAS ---
+        with st.expander("🧠 Consola de Ajuste de Smart Money (Filtros Profesionales)", expanded=False):
+            st.markdown("<small>Si detectaste que el casino bajó el momio dramáticamente contra tu pick (Reverse Line Movement) o si quitaron al jugador estrella del lineup, marca la casilla correspondiente para penalizar al equipo.</small>", unsafe_allow_html=True)
+            col_adv1, col_adv2, col_adv3, col_adv4 = st.columns(4)
             with col_adv1: fatiga_loc_input = st.selectbox(f"Fatiga Bullpen ({loc_nombre})", ["Normal", "Fatigado", "Descansado"], key="fatiga_l")
             with col_adv2: fatiga_vis_input = st.selectbox(f"Fatiga Bullpen ({vis_nombre})", ["Normal", "Fatigado", "Descansado"], key="fatiga_v")
-            with col_adv3: clima_input = st.selectbox("Factor Clima/Estadio", ["Neutral", "Viento a favor (Over)", "Viento en contra (Under)"], key="clima_sel")
+            with col_adv3: clima_input = st.selectbox("Factor Estadio", ["Neutral", "Viento a favor (Over)", "Viento en contra (Under)"], key="clima_sel")
+            with col_adv4: vegas_flag_input = st.selectbox("Movimiento Extraño (Casino)", ["Normal", "Contra Local", "Contra Visita"], key="vegas_sel")
             
-        dm = motor_mlb_360(loc_nombre, vis_nombre, df_mlb, sp_loc_input, sp_vis_input, linea_casino, fatiga_loc_input, fatiga_vis_input, clima_input)
+        dm = motor_mlb_360(loc_nombre, vis_nombre, df_mlb, sp_loc_input, sp_vis_input, linea_casino, fatiga_loc_input, fatiga_vis_input, clima_input, vegas_flag_input)
         
         if dm:
             st.markdown(f'<div class="match-header-mlb"><h2>🏠 {dm["Local"]} vs {dm["Visita"]} ✈️</h2><p><b>Carreras Esperadas (Juego Completo):</b> {dm["ER_L"]} - {dm["ER_V"]}</p></div>', unsafe_allow_html=True)
@@ -618,8 +659,7 @@ elif deporte == "⚾ Béisbol (MLB)":
 
     with tab_mlb3:
         st.subheader("⚡ Parlays & Ranking MLB")
-        # El escáner global usa los defaults ("Normal", "Neutral") para escanear rápido. Luego tú analizas con lupa.
-        data_j_mlb = [motor_mlb_360(p.split(" vs ")[0].strip(), p.split(" vs ")[1].strip(), df_mlb) for p in partidos_mlb]
+        data_j_mlb = [motor_mlb_360(p.split(" vs ")[0].strip(), p.split(" vs ")[1].strip(), df_mlb) for p in nombres_partidos]
         data_j_mlb = [x for x in data_j_mlb if x is not None]
         
         if data_j_mlb:
@@ -662,7 +702,7 @@ elif deporte == "⚾ Béisbol (MLB)":
 
             st.markdown("---")
             
-            # === FILA 3: LA BOMBA SEGURA INTELIGENTE OMNI-MERCADO (NUEVO FILTRO ESTRICTO) ===
+            # === FILA 3: LA BOMBA SEGURA INTELIGENTE OMNI-MERCADO ===
             st.markdown("<h2 style='color:#ec4899; text-align:center;'>🚀 LA BOMBA SEGURA (PARLAY INTELIGENTE OMNI-MERCADO)</h2>", unsafe_allow_html=True)
             st.write("Este escáner está protegido por el nuevo filtro anti-varianza. **Solo aceptará picks con una probabilidad matemática extrema (>56.5%)**. Si un día la cartelera es muy peligrosa, te sugerirá menos picks para proteger tu dinero.")
             
@@ -727,7 +767,7 @@ elif deporte == "⚾ Béisbol (MLB)":
                         </div>
                         <div style="background: rgba(0,0,0,0.3); padding: 10px 20px; border-radius: 8px; border: 1px solid #ec4899; margin-top: 10px;">
                             <span style="color: #f43f5e; font-weight: bold;">⚠️ GESTIÓN DE RIESGO:</span><br>
-                            <small style="color: #fce7f3;">Stake sugerido: <b>0.5u</b>. Al agarrar la probabilidad pura más alta en todos los mercados, el algoritmo maximiza el cobro con riesgo calculado.<br>Nota: Si el casino bloquea algo, usa la lógica para armar la variante permitida.</small>
+                            <small style="color: #fce7f3;">Stake sugerido: <b>0.5u</b>. Al agarrar la probabilidad pura más alta en todos los mercados sin importar el partido, el algoritmo maximiza el cobro con riesgo calculado.<br>Nota: Si el casino bloquea algo, usa la lógica para armar la variante permitida.</small>
                         </div>
                     </div>
                 </div>
