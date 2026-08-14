@@ -388,7 +388,8 @@ elif deporte == "⚾ Béisbol (MLB)":
         st.info(f"💡 No se detectó cartelera en la API para el {fecha_sel.strftime('%d/%m/%Y')} o la conexión falló.")
         partidos_mlb = ["New York Yankees vs Los Angeles Dodgers", "Philadelphia Phillies vs Baltimore Orioles"]
 
-    def motor_mlb_360(local, visita, df, era_sp_l=None, era_sp_v=None, linea_ou=8.5):
+    # --- MOTOR MLB MODIFICADO CON FILTROS PROFESIONALES ---
+    def motor_mlb_360(local, visita, df, era_sp_l=None, era_sp_v=None, linea_ou=8.5, fatiga_l="Normal", fatiga_v="Normal", clima="Neutral"):
         local_clean = local.split(" (Juego")[0].strip()
         visita_clean = visita.split(" (Juego")[0].strip()
         
@@ -401,8 +402,12 @@ elif deporte == "⚾ Béisbol (MLB)":
         if era_sp_l is None: era_sp_l = sl['ERA']
         if era_sp_v is None: era_sp_v = sv['ERA']
         
-        def_l = (era_sp_l * 0.65) + (sl['ERA'] * 0.35)
-        def_v = (era_sp_v * 0.65) + (sv['ERA'] * 0.35)
+        # 1. Filtro de Fatiga del Bullpen (Penalización a la efectividad)
+        bullpen_era_l = sl['ERA'] + (0.75 if fatiga_l == "Fatigado" else -0.25 if fatiga_l == "Descansado" else 0)
+        bullpen_era_v = sv['ERA'] + (0.75 if fatiga_v == "Fatigado" else -0.25 if fatiga_v == "Descansado" else 0)
+        
+        def_l = (era_sp_l * 0.65) + (bullpen_era_l * 0.35)
+        def_v = (era_sp_v * 0.65) + (bullpen_era_v * 0.35)
         
         ajuste_racha_l, ajuste_racha_v = 0, 0
         if str(sl.get('Racha', '')).startswith('L'):
@@ -420,10 +425,18 @@ elif deporte == "⚾ Béisbol (MLB)":
         else:
             p1, p2 = 50.0, 50.0
             
-        er_l = round((def_v * 1.05) * (p1/50.0), 1)
-        er_v = round((def_l * 1.05) * (p2/50.0), 1)
+        er_l_base = (def_v * 1.05) * (p1/50.0)
+        er_v_base = (def_l * 1.05) * (p2/50.0)
+        
+        # 2. Filtro de Clima / Viento (Impacta directamente las carreras esperadas)
+        mod_clima = 1.15 if clima == "Viento a favor (Over)" else 0.85 if clima == "Viento en contra (Under)" else 1.0
+        er_l = round(er_l_base * mod_clima, 1)
+        er_v = round(er_v_base * mod_clima, 1)
         
         nrfi = round(50.0 + ((8.0 - (era_sp_l + era_sp_v)) * 4.0), 1)
+        # El clima también afecta el NRFI (viento a favor baja la probabilidad de ceros)
+        if clima == "Viento a favor (Over)": nrfi -= 4.0
+        elif clima == "Viento en contra (Under)": nrfi += 4.0
         nrfi = max(10.0, min(90.0, nrfi)) 
         
         carreras_totales = er_l + er_v
@@ -431,8 +444,8 @@ elif deporte == "⚾ Béisbol (MLB)":
         over_line = max(10.0, min(90.0, over_line))
 
         # === CÁLCULO F5 (PRIMERAS 5 ENTRADAS) ===
-        lam_f5_l = (era_sp_v / 9.0) * 5.0 * 1.05
-        lam_f5_v = (era_sp_l / 9.0) * 5.0 * 0.95 
+        lam_f5_l = ((era_sp_v / 9.0) * 5.0 * 1.05) * mod_clima
+        lam_f5_v = ((era_sp_l / 9.0) * 5.0 * 0.95) * mod_clima
 
         p1_f5, px_f5, p2_f5 = 0.0, 0.0, 0.0
         for gl in range(10):
@@ -481,8 +494,16 @@ elif deporte == "⚾ Béisbol (MLB)":
         with col_sp1: sp_loc_input = st.number_input(f"🔥 ERA Pitcher - {loc_nombre}", value=era_l_val, min_value=0.50, max_value=10.00, step=0.10, key="sp_loc")
         with col_sp2: sp_vis_input = st.number_input(f"🔥 ERA Pitcher - {vis_nombre}", value=era_v_val, min_value=0.50, max_value=10.00, step=0.10, key="sp_vis")
         with col_ou: linea_casino = st.number_input("🎯 Línea Altas/Bajas (O/U)", value=8.5, min_value=5.0, max_value=15.0, step=0.5, key="linea_ou_sel")
+
+        # --- SECCIÓN DE AJUSTES AVANZADOS (NUEVO) ---
+        with st.expander("🧠 Ajustes Avanzados (Filtros Profesionales Anti-Varianza)", expanded=False):
+            st.markdown("<small>Ajusta estas variables si la información reciente del equipo indica fatiga o si el clima del estadio es extremo.</small>", unsafe_allow_html=True)
+            col_adv1, col_adv2, col_adv3 = st.columns(3)
+            with col_adv1: fatiga_loc_input = st.selectbox(f"Fatiga Bullpen ({loc_nombre})", ["Normal", "Fatigado", "Descansado"], key="fatiga_l")
+            with col_adv2: fatiga_vis_input = st.selectbox(f"Fatiga Bullpen ({vis_nombre})", ["Normal", "Fatigado", "Descansado"], key="fatiga_v")
+            with col_adv3: clima_input = st.selectbox("Factor Clima/Estadio", ["Neutral", "Viento a favor (Over)", "Viento en contra (Under)"], key="clima_sel")
             
-        dm = motor_mlb_360(loc_nombre, vis_nombre, df_mlb, sp_loc_input, sp_vis_input, linea_casino)
+        dm = motor_mlb_360(loc_nombre, vis_nombre, df_mlb, sp_loc_input, sp_vis_input, linea_casino, fatiga_loc_input, fatiga_vis_input, clima_input)
         
         if dm:
             st.markdown(f'<div class="match-header-mlb"><h2>🏠 {dm["Local"]} vs {dm["Visita"]} ✈️</h2><p><b>Carreras Esperadas (Juego Completo):</b> {dm["ER_L"]} - {dm["ER_V"]}</p></div>', unsafe_allow_html=True)
@@ -597,6 +618,7 @@ elif deporte == "⚾ Béisbol (MLB)":
 
     with tab_mlb3:
         st.subheader("⚡ Parlays & Ranking MLB")
+        # El escáner global usa los defaults ("Normal", "Neutral") para escanear rápido. Luego tú analizas con lupa.
         data_j_mlb = [motor_mlb_360(p.split(" vs ")[0].strip(), p.split(" vs ")[1].strip(), df_mlb) for p in partidos_mlb]
         data_j_mlb = [x for x in data_j_mlb if x is not None]
         
@@ -640,9 +662,9 @@ elif deporte == "⚾ Béisbol (MLB)":
 
             st.markdown("---")
             
-            # === FILA 3: LA BOMBA SEGURA INTELIGENTE OMNI-MERCADO ===
+            # === FILA 3: LA BOMBA SEGURA INTELIGENTE OMNI-MERCADO (NUEVO FILTRO ESTRICTO) ===
             st.markdown("<h2 style='color:#ec4899; text-align:center;'>🚀 LA BOMBA SEGURA (PARLAY INTELIGENTE OMNI-MERCADO)</h2>", unsafe_allow_html=True)
-            st.write("Este boleto escanea todos los mercados de la cartelera de manera general y selecciona los 5 picks con la **probabilidad matemática absoluta más alta**, permitiendo combinaciones del mismo partido (Same Game Parlay) si los números lo respaldan.")
+            st.write("Este escáner está protegido por el nuevo filtro anti-varianza. **Solo aceptará picks con una probabilidad matemática extrema (>56.5%)**. Si un día la cartelera es muy peligrosa, te sugerirá menos picks para proteger tu dinero.")
             
             picks_mlb_moon, cuota_mlb_moon = "", 1.0
             
@@ -663,12 +685,17 @@ elif deporte == "⚾ Béisbol (MLB)":
             # Ordenamos absolutamente todos los picks de la jornada por su probabilidad pura
             picks_bomba = sorted(todos_los_picks, key=lambda x: x[0], reverse=True)
             
-            # Filtro inteligente para no repetir el mismo pick idéntico (ej. no tomar ML y F5 del MISMO equipo porque el casino no lo cuenta)
+            # Filtro inteligente para no repetir el mismo pick idéntico y aplicar el Umbral Anti-Varianza
             picks_finales = []
             combinaciones_vistas = set()
             
             for p in picks_bomba:
                 prob, pick_name, cuota, loc, vis = p
+                
+                # UMBRAL ESTRICTO: Si la probabilidad es menor a 56.5%, lo desechamos para no arriesgar.
+                if prob < 56.5:
+                    continue
+                    
                 # Extraemos la esencia (el equipo ganador) para evitar empalmar ML y F5 del mismo equipo
                 esencia = "Victoria " + loc if "Victoria " + loc in pick_name else "Victoria " + vis if "Victoria " + vis in pick_name else pick_name
                 id_partido_esencia = f"{loc}-{vis}-{esencia}"
@@ -680,30 +707,33 @@ elif deporte == "⚾ Béisbol (MLB)":
                 if len(picks_finales) == 5:
                     break
                     
-            for p in picks_finales:
-                mejor_prob, nombre_pick, cuota_est, loc, vis = p
-                picks_mlb_moon += f"✨ <b>{loc} vs {vis}:</b> {nombre_pick} <span style='color:#fbcfe8;'>({mejor_prob}% Probabilidad)</span><br>"
-                cuota_mlb_moon *= cuota_est
+            if len(picks_finales) > 0:
+                for p in picks_finales:
+                    mejor_prob, nombre_pick, cuota_est, loc, vis = p
+                    picks_mlb_moon += f"✨ <b>{loc} vs {vis}:</b> {nombre_pick} <span style='color:#fbcfe8;'>({mejor_prob}% Probabilidad)</span><br>"
+                    cuota_mlb_moon *= cuota_est
+                    
+                mom_moon_mlb = int((cuota_mlb_moon - 1.0) * 100) if cuota_mlb_moon >= 2.0 else int(-100 / (cuota_mlb_moon - 1.0))
                 
-            mom_moon_mlb = int((cuota_mlb_moon - 1.0) * 100) if cuota_mlb_moon >= 2.0 else int(-100 / (cuota_mlb_moon - 1.0))
-            
-            st.markdown(f"""
-            <div class="dream-card">
-                <h3 style="color:#fdf2f8; margin-top:0;">🌌 BOLETO DE LA BOMBA OMNI-MERCADO</h3>
-                <div style="font-size: 1.05em; line-height: 1.6; margin: 15px 0;">{picks_mlb_moon}</div>
-                <hr style="border-color: #db2777;">
-                <div style="display: flex; justify-content: space-around; align-items: center; flex-wrap: wrap;">
-                    <div>
-                        <h2 style="color: #ffffff; margin: 0;">🎟️ MOMIO EST: {mom_moon_mlb:+}</h2>
-                        <span style="color: #fbcfe8;">Cuota Decimal Multiplicada: <b>{round(cuota_mlb_moon, 2)}</b></span>
-                    </div>
-                    <div style="background: rgba(0,0,0,0.3); padding: 10px 20px; border-radius: 8px; border: 1px solid #ec4899; margin-top: 10px;">
-                        <span style="color: #f43f5e; font-weight: bold;">⚠️ GESTIÓN DE RIESGO:</span><br>
-                        <small style="color: #fce7f3;">Stake sugerido: <b>0.5u</b>. Al agarrar la probabilidad pura más alta en todos los mercados sin importar el partido, el algoritmo maximiza el cobro con riesgo calculado.<br>Si el casino bloquea algo, usa la lógica para armar la variante permitida.</small>
+                st.markdown(f"""
+                <div class="dream-card">
+                    <h3 style="color:#fdf2f8; margin-top:0;">🌌 BOLETO DE LA BOMBA OMNI-MERCADO</h3>
+                    <div style="font-size: 1.05em; line-height: 1.6; margin: 15px 0;">{picks_mlb_moon}</div>
+                    <hr style="border-color: #db2777;">
+                    <div style="display: flex; justify-content: space-around; align-items: center; flex-wrap: wrap;">
+                        <div>
+                            <h2 style="color: #ffffff; margin: 0;">🎟️ MOMIO EST: {mom_moon_mlb:+}</h2>
+                            <span style="color: #fbcfe8;">Cuota Decimal Multiplicada: <b>{round(cuota_mlb_moon, 2)}</b></span>
+                        </div>
+                        <div style="background: rgba(0,0,0,0.3); padding: 10px 20px; border-radius: 8px; border: 1px solid #ec4899; margin-top: 10px;">
+                            <span style="color: #f43f5e; font-weight: bold;">⚠️ GESTIÓN DE RIESGO:</span><br>
+                            <small style="color: #fce7f3;">Stake sugerido: <b>0.5u</b>. Al agarrar la probabilidad pura más alta en todos los mercados, el algoritmo maximiza el cobro con riesgo calculado.<br>Nota: Si el casino bloquea algo, usa la lógica para armar la variante permitida.</small>
+                        </div>
                     </div>
                 </div>
-            </div>
-            """, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown('<div class="risk-card" style="border-left-color:#ef4444;"><h3>🛑 ALERTA ANTI-VARIANZA ACTIVA</h3><p>El escáner de la Bomba Inteligente <b>no encontró ningún pick en toda la jornada de hoy que supere el umbral de seguridad del 56.5%</b>. Esto significa que los partidos de hoy son extremadamente parejos y riesgosos. <b>Recomendación del sistema: Guarda tu dinero, hoy no se meten parlays de alto riesgo.</b></p></div>', unsafe_allow_html=True)
 
     with tab_mlb4:
         st.subheader("📈 Ranking de Esperanza Pitagórica (Moneyball)")
