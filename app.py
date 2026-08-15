@@ -74,12 +74,19 @@ if deporte == "⚽ Fútbol (Liga MX)":
 
     lista_equipos = sorted(df_ligamx['Equipo'].tolist())
 
+    # --- ACTUALIZACIÓN DE JORNADA 4 (AGOSTO 15-17) ---
     @st.cache_data(ttl=3600*6)
     def obtener_jornada_automatica():
         return [
-            "Puebla vs Guadalajara", "San Luis vs Tijuana", "Juárez vs Pumas",
-            "Querétaro vs Tigres", "Atlas vs Monterrey", "León vs Pachuca",
-            "Cruz Azul vs Atlante", "América vs Santos", "Toluca vs Necaxa"
+            "Atlante vs Toluca",
+            "Monterrey vs Juárez",
+            "Atlas vs Tigres",
+            "Pumas vs Querétaro",
+            "América vs San Luis",
+            "Santos vs Guadalajara",
+            "Tijuana vs Cruz Azul",
+            "Necaxa vs León",
+            "Pachuca vs Puebla"
         ]
 
     partidos_jornada_default = obtener_jornada_automatica()
@@ -395,7 +402,8 @@ elif deporte == "⚾ Béisbol (MLB)":
         except Exception: pass
         return []
 
-    fecha_default = date.today()
+    # Ajustado a la fecha actual del sistema
+    fecha_default = date(2026, 8, 15)
     col_f1, col_f2 = st.columns([1, 3])
     with col_f1:
         fecha_sel = st.date_input("📅 Selecciona Jornada MLB:", value=fecha_default, min_value=date(2026, 3, 20), max_value=date(2026, 11, 1))
@@ -659,6 +667,7 @@ elif deporte == "⚾ Béisbol (MLB)":
 
     with tab_mlb3:
         st.subheader("⚡ Parlays & Ranking MLB")
+        # El escáner global usa los defaults ("Normal", "Neutral") para escanear rápido. Luego tú analizas con lupa.
         data_j_mlb = [motor_mlb_360(p.split(" vs ")[0].strip(), p.split(" vs ")[1].strip(), df_mlb) for p in nombres_partidos]
         data_j_mlb = [x for x in data_j_mlb if x is not None]
         
@@ -702,7 +711,7 @@ elif deporte == "⚾ Béisbol (MLB)":
 
             st.markdown("---")
             
-            # === FILA 3: LA BOMBA SEGURA INTELIGENTE OMNI-MERCADO ===
+            # === FILA 3: LA BOMBA SEGURA INTELIGENTE OMNI-MERCADO (NUEVO FILTRO ESTRICTO) ===
             st.markdown("<h2 style='color:#ec4899; text-align:center;'>🚀 LA BOMBA SEGURA (PARLAY INTELIGENTE OMNI-MERCADO)</h2>", unsafe_allow_html=True)
             st.write("Este escáner está protegido por el nuevo filtro anti-varianza. **Solo aceptará picks con una probabilidad matemática extrema (>56.5%)**. Si un día la cartelera es muy peligrosa, te sugerirá menos picks para proteger tu dinero.")
             
@@ -767,7 +776,7 @@ elif deporte == "⚾ Béisbol (MLB)":
                         </div>
                         <div style="background: rgba(0,0,0,0.3); padding: 10px 20px; border-radius: 8px; border: 1px solid #ec4899; margin-top: 10px;">
                             <span style="color: #f43f5e; font-weight: bold;">⚠️ GESTIÓN DE RIESGO:</span><br>
-                            <small style="color: #fce7f3;">Stake sugerido: <b>0.5u</b>. Al agarrar la probabilidad pura más alta en todos los mercados sin importar el partido, el algoritmo maximiza el cobro con riesgo calculado.<br>Nota: Si el casino bloquea algo, usa la lógica para armar la variante permitida.</small>
+                            <small style="color: #fce7f3;">Stake sugerido: <b>0.5u</b>. Al agarrar la probabilidad pura más alta en todos los mercados, el algoritmo maximiza el cobro con riesgo calculado.<br>Nota: Si el casino bloquea algo, usa la lógica para armar la variante permitida.</small>
                         </div>
                     </div>
                 </div>
