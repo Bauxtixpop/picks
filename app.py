@@ -32,9 +32,9 @@ st.markdown("""
 if 'parlay_cart' not in st.session_state:
     st.session_state.parlay_cart = []
 
+# FUNCION CORREGIDA PARA EL CALLBACK
 def add_to_parlay(match, pick, odds):
     st.session_state.parlay_cart.append({"Match": match, "Pick": pick, "Odds": odds})
-    st.success(f"✅ [{pick}] añadido al Ticket de Parlay!")
 
 def clear_parlay():
     st.session_state.parlay_cart = []
@@ -236,8 +236,12 @@ if modo == "⚽ Fútbol Universal (Cualquier Liga)":
             </div>
             """, unsafe_allow_html=True)
             
-            if st.button(f"🛒 Agregar '{top[1]}' al Ticket de Parlay"):
-                add_to_parlay(f"{eq_l} vs {eq_v}", top[1], top[2])
+            # BOTON CORREGIDO USANDO CALLBACK (on_click)
+            st.button(f"🛒 Agregar '{top[1]}' al Ticket de Parlay", 
+                      on_click=add_to_parlay, 
+                      args=(f"{eq_l} vs {eq_v}", top[1], top[2]), 
+                      key="btn_add_fut",
+                      type="secondary")
                 
             st.markdown("---")
             c_g, c_b, c_s = st.columns(3)
@@ -334,8 +338,12 @@ elif modo == "⚾ Béisbol Universal (Cualquier Juego MLB)":
             </div>
             """, unsafe_allow_html=True)
             
-            if st.button(f"🛒 Agregar '{top_m[1]}' al Ticket de Parlay"):
-                add_to_parlay(f"{mlb_l} vs {mlb_v}", top_m[1], top_m[2])
+            # BOTON CORREGIDO USANDO CALLBACK (on_click)
+            st.button(f"🛒 Agregar '{top_m[1]}' al Ticket de Parlay", 
+                      on_click=add_to_parlay, 
+                      args=(f"{mlb_l} vs {mlb_v}", top_m[1], top_m[2]), 
+                      key="btn_add_mlb",
+                      type="secondary")
                 
             st.markdown("---")
             st.markdown("### 📊 RADIOGRAFÍA COMPLETA DEL DIAMANTE")
@@ -408,3 +416,4 @@ elif modo == "🇲🇽 Guía Pro / Análisis Forense":
     3. Si detectas que una línea se movió raro, ajusta el selector de *Dinero Inteligente*.
     4. Toma el **Top Pick** y agrégalo a tu ticket.
     """)
+    
